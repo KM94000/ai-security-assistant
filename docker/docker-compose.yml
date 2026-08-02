@@ -1,0 +1,17 @@
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=development
+
+  # --- Services des milestones suivants (feuille de route) ---
+  # qdrant:      # M1 — base de donnees vectorielle
+  #   image: qdrant/qdrant
+  #   ports: ["6333:6333"]
+  #
+  # langfuse:    # M4 — observabilite / tracing
+  #   image: langfuse/langfuse
