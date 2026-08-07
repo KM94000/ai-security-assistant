@@ -23,3 +23,33 @@ jobs:
         run: mypy src
       - name: Tests (pytest)
         run: pytest
+
+  # Garde-fou DevSecOps : un code vulnerable ou fuyant un secret
+  # ne peut pas atteindre main. Reference : docs/SECURITY.md, SEC-15.
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # gitleaks scanne tout l'historique, pas juste le diff
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Installer les dependances
+        run: pip install -e ".[dev]"
+      - name: Secrets commites (gitleaks)
+        # Gratuit pour les depots personnels et publics ; une organisation
+        # doit fournir GITLEAKS_LICENSE.
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Dependances vulnerables (pip-audit)
+        # --skip-editable : notre propre paquet est installe en editable et
+        # n'existe pas sur PyPI. Le code applicatif est de toute facon couvert
+        # par bandit, pas par pip-audit.
+        # Pas de --strict : ce flag fait echouer sur toute dependance *ignoree*
+        # (donc sur notre paquet editable), pas sur les vulnerabilites. Une
+        # vulnerabilite trouvee fait deja sortir pip-audit en code 1.
+        run: pip-audit --skip-editable
+      - name: SAST du code applicatif (bandit)
+        run: bandit -r src -c pyproject.toml
