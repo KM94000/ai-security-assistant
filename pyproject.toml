@@ -21,6 +21,9 @@ dev = [
     "black>=24.0",
     "mypy>=1.10",
     "pre-commit>=3.7",
+    # Scans securite executes en CI (voir .github/workflows/ci.yml)
+    "bandit[toml]>=1.7",
+    "pip-audit>=2.7",
 ]
 
 [tool.setuptools.packages.find]
@@ -44,3 +47,8 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.bandit]
+# Le SAST ne scanne que le code applicatif : les tests contiennent
+# volontairement des charges malveillantes (tests/security/).
+exclude_dirs = ["tests", ".venv"]

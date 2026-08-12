@@ -1,17 +1,24 @@
 repos:
+  # ruff ne fait que le lint : le formatage appartient a black (CLAUDE.md §3).
+  # Lancer ruff-format ET black ferait s'affronter deux formateurs.
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.4.10
+    rev: v0.16.1
     hooks:
-      - id: ruff
-      - id: ruff-format
+      - id: ruff-check
   - repo: https://github.com/psf/black
-    rev: 24.4.2
+    rev: 26.5.1
     hooks:
       - id: black
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.6.0
+    rev: v6.0.0
     hooks:
       - id: end-of-file-fixer
       - id: trailing-whitespace
       - id: check-yaml
       - id: detect-private-key      # securite : bloque les cles privees commitees
+  # Garde-fou LOCAL contre les secrets (ARCHITECTURE.md, couche 3).
+  # La CI repasse le meme scan : deux filets, le local est juste plus rapide.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.0
+    hooks:
+      - id: gitleaks

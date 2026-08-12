@@ -7,6 +7,11 @@ COPY pyproject.toml ./
 COPY src ./src
 RUN pip install --no-cache-dir .
 
+# Moindre privilege : l'installation a besoin de root, pas l'execution.
+# Si le conteneur est compromis, l'attaquant n'herite pas d'un shell root.
+RUN useradd --create-home --uid 1000 appuser
+USER appuser
+
 EXPOSE 8000
 
 # Le conteneur declare lui-meme son etat de sante
