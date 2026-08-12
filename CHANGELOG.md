@@ -1,5 +1,30 @@
 # Changelog
 
+## [Non publie] - M1, ticket 9 : base vectorielle Qdrant
+### Ajoute
+- Interface `VectorStore` (`ensure_collection`, `add`, `search`) et dataclass
+  `SearchResult` {text, source, score}.
+- Implementation `QdrantVectorStore`, client injectable.
+- `ensure_collection` idempotent, qui leve `CollectionDimensionMismatchError`
+  si la collection existe avec une autre dimension au lieu de degrader la
+  recherche en silence.
+- Provenance obligatoire : chaque point porte `text` et `source` en payload, et
+  un point sans provenance exploitable est refuse a la lecture plutot que rendu
+  avec des valeurs par defaut.
+- Identifiants de points derives de (source, texte) : re-ingerer un corpus met
+  a jour au lieu de dupliquer.
+- Controle d'alignement dans `add` : des sequences de longueurs differentes
+  associeraient un extrait a la provenance d'un autre.
+- 12 tests unitaires sur un Qdrant en memoire, plus 2 tests d'integration
+  contre le conteneur, dont la chaine complete MiniLM puis indexation puis
+  recherche semantique.
+- Parametres `qdrant_url` et `qdrant_collection`, refletes dans `.env.example`.
+
+### Modifie
+- `docker-compose.yml` : service Qdrant active, image epinglee en v1.18.3,
+  healthcheck, `depends_on` conditionne a la sante du service, et bloc
+  `volumes` remis en fin de fichier.
+
 ## [Non publie] - M1, ticket 8 : interfaces LLM et embeddings
 ### Ajoute
 - Interface `LLMProvider` (`complete`, `stream`) et son implementation

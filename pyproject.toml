@@ -25,6 +25,9 @@ dependencies = [
     # Plancher a 5.7 : c'est la version verifiee, et celle ou l'on s'appuie sur
     # get_embedding_dimension plutot que sur son alias deprecie.
     "sentence-transformers>=5.7",
+    # Base vectorielle (ADR-0005). Le mode ":memory:" du client embarque le
+    # vrai moteur Qdrant : les tests unitaires n'ont besoin d'aucun conteneur.
+    "qdrant-client>=1.19",
 ]
 
 [project.optional-dependencies]
