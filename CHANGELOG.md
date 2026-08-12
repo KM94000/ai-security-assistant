@@ -24,6 +24,9 @@
 - `httpx` passe des dependances de dev aux dependances d'execution.
 - Tests reorganises en `tests/unit/` et `tests/integration/` (CLAUDE.md 5).
 - CI : cache pip active, le telechargement de torch n'etant pas repete a chaque job.
+- CI : gitleaks lance via son binaire epingle plutot que via gitleaks-action@v2,
+  cassee par la migration forcee des runners GitHub de Node 20 vers Node 24.
+  Meme binaire et meme version qu'en pre-commit, donc meme verdict des deux cotes.
 
 ## [Non publie] - Consolidation avant M1
 ### Ajoute

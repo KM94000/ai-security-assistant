@@ -44,11 +44,25 @@ jobs:
       - name: Installer les dependances
         run: pip install -e ".[dev]"
       - name: Secrets commites (gitleaks)
-        # Gratuit pour les depots personnels et publics ; une organisation
-        # doit fournir GITLEAKS_LICENSE.
-        uses: gitleaks/gitleaks-action@v2
+        # Binaire plutot que gitleaks/gitleaks-action@v2 : cette action est une
+        # action Node, cassee par la migration forcee des runners de Node 20
+        # vers Node 24. Le binaire n'a aucune dependance de runtime, donc rien
+        # que GitHub puisse deprecier sous nos pieds.
+        #
+        # Bonus : c'est exactement le binaire que lance le hook pre-commit, a la
+        # meme version. Local et CI donnent le meme verdict, ce qui n'etait pas
+        # garanti avec l'action.
+        #
+        # curl -f : sans lui, une erreur HTTP est ecrite dans l'archive et
+        # l'echec se manifeste plus loin, dans tar, avec un message opaque.
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Doit rester alignee avec la rev de .pre-commit-config.yaml
+          GITLEAKS_VERSION: "8.30.0"
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/gitleaks.tar.gz" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" detect --source . --redact --no-banner
       - name: Dependances vulnerables (pip-audit)
         # --skip-editable : notre propre paquet est installe en editable et
         # n'existe pas sur PyPI. Le code applicatif est de toute facon couvert
