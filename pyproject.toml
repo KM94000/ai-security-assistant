@@ -6,17 +6,30 @@ build-backend = "setuptools.build_meta"
 name = "ai-security-assistant"
 version = "0.1.0"
 description = "Plateforme RAG + agents répondant à des questions de cybersécurité, durcie contre les attaques propres aux LLM."
-requires-python = ">=3.11"
+# 3.12 et non 3.11 : les stubs de numpy, tire par sentence-transformers,
+# utilisent la syntaxe PEP 695 qui n'existe qu'a partir de 3.12. Conserver un
+# plancher 3.11 rendrait le typage impossible, pour une compatibilite qui n'est
+# ni testee ni executee nulle part.
+requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
     "pydantic-settings>=2.2",
+    # Client HTTP asynchrone : appels a Ollama. Etait en dependance de dev
+    # (TestClient) ; devient une dependance d'execution avec OllamaProvider.
+    "httpx>=0.27",
+    # Utilise directement pour deporter la vectorisation hors de la boucle
+    # d'evenements. Arrive aussi via starlette, mais un import direct se declare.
+    "anyio>=4.0",
+    # Embeddings locaux (ADR-0006). Tire torch : environ 200 Mo de wheel.
+    # Plancher a 5.7 : c'est la version verifiee, et celle ou l'on s'appuie sur
+    # get_embedding_dimension plutot que sur son alias deprecie.
+    "sentence-transformers>=5.7",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
-    "httpx>=0.27",
     "ruff>=0.4",
     "black>=24.0",
     "mypy>=1.10",
@@ -31,22 +44,30 @@ where = ["src"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.black]
 line-length = 100
-target-version = ["py311"]
+target-version = ["py312"]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 strict = true
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Les tests d'integration sont exclus par defaut : ils telechargent des modeles
+# ou exigent un service (Qdrant, Ollama). La suite par defaut doit rester
+# rapide et executable hors ligne, sinon on cesse de la lancer.
+# Les lancer explicitement avec : pytest -m integration
+addopts = "-m 'not integration'"
+markers = [
+    "integration: necessite un service externe ou un modele telecharge",
+]
 
 [tool.bandit]
 # Le SAST ne scanne que le code applicatif : les tests contiennent

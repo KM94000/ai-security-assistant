@@ -1,5 +1,33 @@
 # Changelog
 
+## [Non publie] - M1, ticket 8 : interfaces LLM et embeddings
+### Ajoute
+- Interface `LLMProvider` (`complete`, `stream`) et son implementation
+  `OllamaProvider`, avec client HTTP injectable pour des tests sans reseau.
+- Interface `Embedder` (`embed`, `dimension`) et son implementation
+  `SentenceTransformerEmbedder` (all-MiniLM-L6-v2, chargement paresseux,
+  vectorisation deportee hors de la boucle d'evenements).
+- Garde-fou de dimension : un modele dont la dimension differe de la
+  configuration leve `DimensionMismatchError` au lieu de degrader la recherche
+  en silence.
+- Erreurs typees `LLMError`, `EmbedderError` : les exceptions des bibliotheques
+  tierces ne remontent pas au metier.
+- Parametres de configuration pour Ollama et les embeddings, refletes dans
+  `.env.example`.
+- Marqueur pytest `integration`, exclu par defaut : tests contre le vrai serveur
+  Ollama et le vrai modele MiniLM, lances avec `pytest -m integration`.
+- ADR-0008 : interfaces asynchrones des M1.
+
+### Modifie
+- Plancher Python releve de 3.11 a 3.12 : les stubs de numpy, tire par
+  sentence-transformers, exigent la syntaxe PEP 695.
+- `httpx` passe des dependances de dev aux dependances d'execution.
+- Tests reorganises en `tests/unit/` et `tests/integration/` (CLAUDE.md 5).
+- CI : cache pip active, le telechargement de torch n'etant pas repete a chaque job.
+- CI : gitleaks lance via son binaire epingle plutot que via gitleaks-action@v2,
+  cassee par la migration forcee des runners GitHub de Node 20 vers Node 24.
+  Meme binaire et meme version qu'en pre-commit, donc meme verdict des deux cotes.
+
 ## [Non publie] - Consolidation avant M1
 ### Ajoute
 - Documentation de conception rapatriee dans le depot : ARCHITECTURE, BUILD_PLAN,

@@ -19,7 +19,7 @@ d'usage de sécurité de premier plan**, pas comme une couche annexe.
 
 - **Utilisateurs** : analyste SOC N1, ingénieur AppSec, développeur.
 - **Repo** : github.com/KM94000/ai-security-assistant
-- **Package Python** : `aisecassist` · **Python** : >=3.11
+- **Package Python** : `aisecassist` · **Python** : >=3.12
 
 ---
 
