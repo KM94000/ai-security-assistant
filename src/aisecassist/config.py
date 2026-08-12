@@ -26,6 +26,13 @@ class Settings(BaseSettings):
     qdrant_url: str = "http://localhost:6333"
     qdrant_collection: str = "aisec_docs"
 
+    # --- Ingestion ---
+    chunk_size: int = 800
+    chunk_overlap: int = 120
+    # Plafond de taille d'un document (SEC-13). Verifie avant toute lecture :
+    # controler apres coup ne protegerait de rien, le mal etant deja fait.
+    max_document_bytes: int = 2_000_000
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
 

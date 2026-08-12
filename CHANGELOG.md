@@ -1,5 +1,33 @@
 # Changelog
 
+## [Non publie] - M1, ticket 10 : pipeline d'ingestion
+### Ajoute
+- Chaine complete `charger -> assainir -> decouper -> vectoriser -> indexer`,
+  avec un point d'entree CLI :
+  `python -m aisecassist.ingestion.pipeline data/corpus`.
+- `loader` : liste blanche d'extensions et plafond de taille verifie **avant**
+  lecture, refus des contenus non decodables.
+- `cleaner` : normalisation NFKC, suppression des caracteres de largeur nulle,
+  des marques bidirectionnelles et des caracteres de controle. Comptage des
+  invisibles retires, remonte dans le rapport d'ingestion.
+- `chunker` : fenetre glissante pure, avec garde-fou contre un recouvrement
+  superieur ou egal a la taille du fragment, qui bouclerait indefiniment.
+- `IngestionReport` : chaque document ecarte est nomme avec sa raison, jamais
+  simplement compte.
+- **Naissance de `tests/security/`**, nomme par identifiant de la matrice :
+  `test_sec13_ingestion_limits.py` et `test_sec04_sanitation.py`.
+- Corpus de reference dans `data/corpus/` : syntheses OWASP LLM Top 10,
+  MITRE ATLAS et NIST AI RMF, avec un README qui trace leur provenance.
+- Test d'integration ingerant le vrai corpus dans le vrai Qdrant.
+- Parametres `chunk_size`, `chunk_overlap` et `max_document_bytes`.
+
+### Securite
+- **SEC-13 passe a vert en CI.** Fichier surdimensionne, extension hors liste
+  blanche et binaire deguise sont refuses, et le pipeline poursuit en nommant
+  les documents ecartes.
+- **SEC-04 passe a partiel.** La sanitation est faite et testee ; l'isolement
+  au retrieval depend de la delimitation du contexte (ticket 12).
+
 ## [Non publie] - M1, ticket 9 : base vectorielle Qdrant
 ### Ajoute
 - Interface `VectorStore` (`ensure_collection`, `add`, `search`) et dataclass
