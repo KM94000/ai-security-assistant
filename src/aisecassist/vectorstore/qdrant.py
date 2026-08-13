@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from collections.abc import Sequence
 from types import TracebackType
@@ -22,6 +23,8 @@ from aisecassist.vectorstore.base import (
 # dupliquerait, et la recherche renverrait plusieurs fois le meme passage en
 # gaspillant le budget de contexte.
 _POINT_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_DNS, "vectorstore.aisecassist")
+
+logger = logging.getLogger(__name__)
 
 
 class QdrantVectorStore(VectorStore):
@@ -115,7 +118,25 @@ class QdrantVectorStore(VectorStore):
         except Exception as exc:
             raise VectorStoreError(f"Recherche dans {self._collection} echouee : {exc}") from exc
 
-        return [_to_search_result(point) for point in response.points]
+        # Un point sans provenance est ecarte, pas fatal. Le faire echouer
+        # transformait une seule donnee corrompue en panne totale : si ce point
+        # se trouvait pres du centre de l'espace vectoriel, il entrait dans le
+        # top-k de presque toutes les requetes et /query renvoyait 503 pour tout
+        # le monde. La propriete de securite est preservee — aucun extrait sans
+        # provenance n'est rendu — mais la disponibilite ne depend plus de
+        # l'integrite de chaque point.
+        resultats: list[SearchResult] = []
+        for point in response.points:
+            resultat = _to_search_result(point)
+            if resultat is None:
+                logger.warning(
+                    "Point %s ecarte de %s : provenance inexploitable dans le payload.",
+                    getattr(point, "id", "?"),
+                    self._collection,
+                )
+                continue
+            resultats.append(resultat)
+        return resultats
 
     async def aclose(self) -> None:
         """Libere le client si ce store en est proprietaire."""
@@ -160,19 +181,17 @@ def _point_id(source: str, text: str) -> str:
     return str(uuid.uuid5(_POINT_NAMESPACE, f"{source}\x00{text}"))
 
 
-def _to_search_result(point: Any) -> SearchResult:
-    """Convertit un point Qdrant en `SearchResult`, provenance verifiee.
+def _to_search_result(point: Any) -> SearchResult | None:
+    """Convertit un point Qdrant en `SearchResult`, ou `None` si sa provenance manque.
 
-    Un point sans `text` ni `source` exploitables est refuse plutot que rendu
-    avec des valeurs par defaut : mieux vaut une erreur bruyante qu'un extrait
-    cite comme provenant de "inconnu" au milieu d'une reponse (SEC-08).
+    Un point sans `text` ni `source` exploitables n'est jamais rendu avec des
+    valeurs par defaut : un extrait cite comme provenant de "inconnu" au milieu
+    d'une reponse est pire qu'un extrait absent, parce qu'il a l'air verifiable
+    (SEC-08). L'appelant l'ecarte et le journalise.
     """
     payload = point.payload or {}
     text = payload.get("text")
     source = payload.get("source")
     if not isinstance(text, str) or not isinstance(source, str):
-        raise VectorStoreError(
-            f"Point {point.id} sans provenance exploitable : "
-            "champs 'text' et 'source' attendus dans le payload."
-        )
+        return None
     return SearchResult(text=text, source=source, score=float(point.score))

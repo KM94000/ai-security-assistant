@@ -1,5 +1,34 @@
 # Changelog
 
+## [Non publie] - Revue de M1 : correctifs
+### Corrige
+- **docker-compose** : le healthcheck Qdrant utilisait `/dev/tcp`, une extension
+  bash, alors que `CMD-SHELL` passe par `/bin/sh` — dash dans cette image. La
+  sonde echouait systematiquement et, avec `depends_on: service_healthy`, l'API
+  ne demarrait jamais. Invocation explicite de bash. Verifie : le conteneur
+  passe `healthy` des la premiere sonde.
+- **Assemblage du prompt** : `resultat.source` etait interpole sans passer par
+  la neutralisation appliquee au texte, alors qu'il vient du meme payload non
+  fiable. Un nom de fichier contenant un saut de ligne rompait la structure
+  `[n] source : X`. Repliement des lignes, neutralisation et plafond de longueur.
+- **Recherche Qdrant** : un point sans provenance faisait echouer la requete
+  entiere. Un seul point corrompu proche du centre de l'espace vectoriel rendait
+  `/query` indisponible pour tous. Le point est desormais ecarte et journalise ;
+  aucun extrait sans provenance n'est rendu, la disponibilite ne depend plus de
+  l'integrite de chaque point.
+- **Decoupage** : la deduplication ne retirait qu'une seule queue redondante. Un
+  recouvrement eleve en produit plusieurs, qui occupaient des places du top-k
+  pour le meme passage.
+- **Corpus** : `README.md` etait ingere comme du contenu interrogeable et pouvait
+  etre cite en source d'une reponse de securite. Deplace dans `data/`.
+- **Configuration** : contraintes pydantic sur les bornes, et validation de
+  `chunk_overlap < chunk_size` au chargement. `RETRIEVAL_TOP_K=0` demarrait sans
+  un mot puis faisait echouer chaque requete en 503.
+- **Generation** : une reponse vide du modele repartait en 200 accompagnee de
+  sources, ce qui a la forme d'un resultat verifiable sans rien affirmer. Traitee
+  comme un echec de generation.
+- Retrait d'une fonction morte dans les tests d'integration.
+
 ## [Non publie] - M1, tickets 11 a 13 : recherche, generation et POST /query
 ### Ajoute
 - `RetrievalService` : vectorise la question et interroge la base. N'appelle pas

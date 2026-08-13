@@ -15,7 +15,7 @@ verifient chaque etage ; celui-ci verifie qu'ils sont branches ensemble.
 from __future__ import annotations
 
 import uuid
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -81,10 +81,6 @@ def corpus_indexe(collection_isolee: str) -> Iterator[str]:
 
     anyio.run(_ingerer)
     yield collection_isolee
-
-
-async def _noop() -> AsyncIterator[None]:  # pragma: no cover - garde-fou de typage
-    yield None
 
 
 def test_une_question_reelle_recoit_une_reponse_sourcee(corpus_indexe: str) -> None:

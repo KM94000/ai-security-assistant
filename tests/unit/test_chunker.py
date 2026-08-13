@@ -33,6 +33,20 @@ def test_chaque_fragment_reprend_la_fin_du_precedent() -> None:
         assert suivant[0] == precedent[-1]
 
 
+def test_toutes_les_queues_redondantes_sont_retirees() -> None:
+    """Non-regression : un seul `pop()` ne suffisait pas.
+
+    Avec un recouvrement eleve, plusieurs fragments de fin sont entierement
+    contenus dans leurs predecesseurs. Une premiere version n'en retirait qu'un,
+    et les quasi-doublons restants pouvaient occuper plusieurs places du top-k
+    pour le meme passage, evincant d'autres sources.
+    """
+    fragments = chunk_text("abcdefghij", chunk_size=8, overlap=6)
+
+    for precedent, suivant in zip(fragments, fragments[1:], strict=False):
+        assert suivant not in precedent, f"{suivant!r} est redondant avec {precedent!r}"
+
+
 def test_aucun_fragment_vide_ou_blanc_nest_produit() -> None:
     fragments = chunk_text("a\n\n\n   \n\nb", chunk_size=3, overlap=1)
 

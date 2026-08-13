@@ -2,6 +2,12 @@
 
 Documents ingeres par le pipeline (`python -m aisecassist.ingestion.pipeline data/corpus`).
 
+> Cette note vit dans `data/` et non dans `data/corpus/` : le chargeur ingere
+> **tout** fichier du repertoire cible. Laissee a l'interieur, elle etait
+> vectorisee au meme titre que les referentiels, et pouvait etre citee comme
+> source d'une reponse de cybersecurite. `data/corpus/` ne contient que du
+> contenu destine a etre interroge.
+
 ## Provenance
 
 Ces fichiers sont des **syntheses redigees pour ce projet**, pas des copies des

@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from aisecassist.generation.prompt import REFUS_SANS_CONTEXTE, build_prompt
-from aisecassist.llm.base import LLMProvider
+from aisecassist.llm.base import LLMError, LLMProvider
 from aisecassist.vectorstore.base import SearchResult
 
 
@@ -40,6 +40,13 @@ class GenerationService:
             return GeneratedAnswer(answer=REFUS_SANS_CONTEXTE, sources=())
 
         prompt = build_prompt(question, results)
-        reponse = await self._llm.complete(prompt.text)
+        reponse = (await self._llm.complete(prompt.text)).strip()
 
-        return GeneratedAnswer(answer=reponse.strip(), sources=prompt.sources)
+        # Une reponse vide accompagnee de sources est plus trompeuse qu'une
+        # erreur : elle a la forme d'un resultat verifiable et n'affirme rien.
+        # On la traite comme ce qu'elle est — un echec de generation — et la
+        # couche API la rend en 503.
+        if not reponse:
+            raise LLMError("Le modele n'a produit aucun texte exploitable.")
+
+        return GeneratedAnswer(answer=reponse, sources=prompt.sources)
