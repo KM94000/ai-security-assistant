@@ -42,7 +42,7 @@ class OllamaProvider(LLMProvider):
             response.raise_for_status()
             data: Any = response.json()
         except httpx.HTTPError as exc:
-            raise LLMError(f"Appel a Ollama echoue : {exc}") from exc
+            raise LLMError(_decrire("Appel a Ollama echoue", exc)) from exc
         except json.JSONDecodeError as exc:
             raise LLMError("Reponse d'Ollama illisible : JSON invalide") from exc
 
@@ -66,7 +66,7 @@ class OllamaProvider(LLMProvider):
                     if chunk.get("done") is True:
                         return
         except httpx.HTTPError as exc:
-            raise LLMError(f"Flux Ollama interrompu : {exc}") from exc
+            raise LLMError(_decrire("Flux Ollama interrompu", exc)) from exc
 
     async def aclose(self) -> None:
         """Libere le client HTTP si ce provider en est proprietaire."""
@@ -83,6 +83,18 @@ class OllamaProvider(LLMProvider):
         tb: TracebackType | None,
     ) -> None:
         await self.aclose()
+
+
+def _decrire(contexte: str, exc: Exception) -> str:
+    """Compose un message d'erreur qui reste exploitable dans les logs.
+
+    httpx leve certaines exceptions — les depassements de delai notamment — dont
+    le `str()` est vide. Interpoler l'exception seule produit alors un log du
+    genre "Appel a Ollama echoue :", qui ne permet aucun diagnostic. Le nom de
+    la classe, lui, est toujours present et suffit souvent a comprendre.
+    """
+    detail = str(exc).strip()
+    return f"{contexte} ({type(exc).__name__})" + (f" : {detail}" if detail else "")
 
 
 def _parse_stream_line(line: str) -> dict[str, Any]:
