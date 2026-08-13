@@ -5,8 +5,24 @@ partir de sources de reference (OWASP, MITRE ATT&CK/ATLAS, CVE, NIST) —
 construite comme un **produit de production** et **durcie contre les attaques
 propres aux LLM** (sa propre surface d'attaque est traitee comme un cas d'usage).
 
-> Statut : 🚧 M0 — fondations. Le service est deployable et la CI verte ;
-> les fonctionnalites IA arrivent aux milestones suivants.
+> Statut : 🚧 M1 — le RAG repond. Ingestion d'un corpus, recherche vectorielle
+> et `POST /query` avec reponse sourcee. La couverture securite est suivie
+> ligne a ligne dans [`docs/SECURITY.md`](docs/SECURITY.md), colonne Statut.
+
+## ⚡ Essayer
+
+```bash
+docker compose -f docker/docker-compose.yml up -d qdrant
+ollama serve                                    # dans un autre terminal
+python -m aisecassist.ingestion.pipeline data/corpus
+uvicorn aisecassist.main:app --reload
+```
+
+```bash
+curl -X POST http://localhost:8000/query \
+  -H "Content-Type: application/json" \
+  -d '{"question":"Pourquoi l'"'"'injection indirecte est-elle plus dangereuse dans un RAG ?"}'
+```
 
 ## 🎯 Ce que ce projet demontre
 - Architecture RAG + agents pensee pour la production
