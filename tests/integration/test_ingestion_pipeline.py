@@ -64,8 +64,10 @@ async def test_le_corpus_de_reference_sindexe_et_se_retrouve(collection_jetable:
 
         report = await pipeline.ingest_directory(_CORPUS)
 
-        # Les quatre fichiers du corpus doivent tous passer, README compris.
-        assert report.documents_ingested == 4
+        # Les trois referentiels doivent tous passer. La note de provenance vit
+        # dans data/ et non dans data/corpus/, precisement pour ne pas etre
+        # indexee comme du contenu interrogeable.
+        assert report.documents_ingested == 3
         assert report.skipped == ()
         assert report.chunks_indexed > 10
 

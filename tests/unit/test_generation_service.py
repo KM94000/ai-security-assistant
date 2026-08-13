@@ -70,6 +70,20 @@ async def test_le_prompt_transmis_contient_la_question_et_le_contexte() -> None:
     assert "src.md" in prompt
 
 
+@pytest.mark.parametrize("vide", ["", "   ", "\n\n"])
+async def test_une_reponse_vide_du_modele_est_traitee_comme_une_panne(vide: str) -> None:
+    """Une reponse vide accompagnee de sources est plus trompeuse qu'une erreur.
+
+    Elle a la forme d'un resultat verifiable et n'affirme rien : le client voit
+    des sources qui semblent etayer un contenu inexistant. On la traite comme ce
+    qu'elle est, un echec de generation, et la couche API la rend en 503.
+    """
+    service = GenerationService(FakeLLM(vide))
+
+    with pytest.raises(LLMError):
+        await service.answer("question", [extrait("contenu")])
+
+
 async def test_une_panne_du_modele_remonte_telle_quelle() -> None:
     """Le service ne masque pas la panne : c'est la couche API qui la traduit en 503."""
     service = GenerationService(ExplodingLLM(LLMError("ollama injoignable")))

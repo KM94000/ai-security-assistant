@@ -42,6 +42,10 @@ _NONCE_BYTES = 16
 _FORME_DELIMITEUR = re.compile(r"=== *(?:CONTEXTE|QUESTION)-[0-9a-fA-F]{8,} *===")
 _MARQUEUR_RETIRE = "[marqueur retire]"
 
+# Plafond de longueur d'une provenance affichee dans le prompt. Un nom de
+# fichier legitime tient tres largement en dessous.
+_SOURCE_MAX = 200
+
 # Les instructions designent les marqueurs par leur PREFIXE, jamais par leur
 # valeur complete. Ecrire le marqueur entier ici le ferait apparaitre trois fois
 # dans le prompt : la premiere occurrence ne serait plus l'ouverture du bloc, et
@@ -99,7 +103,9 @@ def build_prompt(question: str, results: Sequence[SearchResult]) -> AssembledPro
     for rang, resultat in enumerate(results, start=1):
         if resultat.source not in sources:
             sources.append(resultat.source)
-        extraits.append(f"[{rang}] source : {resultat.source}\n{_neutraliser(resultat.text)}")
+        extraits.append(
+            f"[{rang}] source : {_source_sure(resultat.source)}\n{_neutraliser(resultat.text)}"
+        )
 
     corps_contexte = "\n\n".join(extraits) if extraits else "(aucun extrait pertinent)"
 
@@ -118,3 +124,30 @@ def build_prompt(question: str, results: Sequence[SearchResult]) -> AssembledPro
 def _neutraliser(contenu: str) -> str:
     """Retire du contenu tout ce qui a la forme d'un delimiteur de bloc."""
     return _FORME_DELIMITEUR.sub(_MARQUEUR_RETIRE, contenu)
+
+
+def _source_sure(source: str) -> str:
+    """Rend une provenance sure a interpoler sur une seule ligne du prompt.
+
+    La provenance emprunte exactement le meme chemin non fiable que le texte :
+    c'est une valeur du payload Qdrant, ecrite a l'ingestion ou directement en
+    base. Une premiere version neutralisait le texte et oubliait la source qui
+    l'accompagne — un nom de fichier contenant un saut de ligne suffisait alors
+    a rompre la structure "[n] source : X" et a faire passer du texte pour une
+    nouvelle entree de contexte.
+
+    Trois mesures, dans cet ordre :
+
+    1. Les sauts de ligne deviennent des espaces. La provenance doit tenir sur
+       une ligne, sinon elle cree une structure qu'elle n'est pas censee creer.
+    2. Neutralisation de la forme des delimiteurs — appliquee **apres** l'etape
+       precedente, pour attraper un marqueur qui aurait ete reassemble par le
+       repliement des lignes.
+    3. Plafond de longueur : un nom de fichier legitime tient largement dessous,
+       et une valeur demesuree ne doit pas gonfler le prompt.
+    """
+    sur_une_ligne = source.replace("\r", " ").replace("\n", " ")
+    neutralise = _neutraliser(sur_une_ligne).strip()
+    if len(neutralise) > _SOURCE_MAX:
+        return neutralise[:_SOURCE_MAX] + "…"
+    return neutralise

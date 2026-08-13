@@ -161,22 +161,31 @@ async def test_search_refuse_un_k_non_positif(store: QdrantVectorStore) -> None:
         await store.search(_VEC_A, k=0)
 
 
-async def test_un_point_sans_provenance_est_refuse() -> None:
-    """Un extrait sans source ne doit pas etre rendu, meme partiellement.
+async def test_un_point_sans_provenance_est_ecarte_sans_faire_echouer_la_recherche() -> None:
+    """Un extrait sans source n'est jamais rendu, mais il ne fait pas tomber la requete.
 
-    On simule un point insere hors de `add` — migration, script manuel, ou
-    ecriture directe dans la base.
+    Une premiere version levait une erreur, ce qui transformait une seule donnee
+    corrompue en panne totale : un point malforme proche du centre de l'espace
+    vectoriel entrait dans le top-k de presque toutes les requetes, et /query
+    renvoyait 503 pour tout le monde jusqu'a nettoyage manuel de la base.
+
+    La propriete de securite est identique — aucun extrait sans provenance n'est
+    rendu — mais la disponibilite ne depend plus de l'integrite de chaque point.
     """
     client = AsyncQdrantClient(location=":memory:")
     try:
         store = QdrantVectorStore(url="", collection=_COLLECTION, client=client)
         await store.ensure_collection(_DIM)
+        await store.add(["extrait valide"], [_VEC_A], ["source.md"])
         await client.upsert(
             _COLLECTION,
             points=[models.PointStruct(id=1, vector=_VEC_A, payload={"text": "orphelin"})],
         )
 
-        with pytest.raises(VectorStoreError):
-            await store.search(_VEC_A, k=1)
+        resultats = await store.search(_VEC_A, k=10)
+
+        assert [r.text for r in resultats] == ["extrait valide"]
+        assert all(r.source for r in resultats)
+
     finally:
         await client.close()

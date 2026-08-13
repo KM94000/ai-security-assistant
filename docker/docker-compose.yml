@@ -24,8 +24,13 @@ services:
     volumes:
       - qdrant_storage:/qdrant/storage   # les donnees survivent aux redemarrages
     healthcheck:
-      # L'image ne contient ni curl ni wget : on interroge le port avec bash.
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/6333 && echo ok"]
+      # L'image ne contient ni curl, ni wget, ni nc : on ouvre une socket depuis
+      # le shell. /dev/tcp est une extension **bash** — il faut donc invoquer
+      # bash explicitement. Avec CMD-SHELL, Docker passe par /bin/sh, qui est
+      # dash dans cette image et repond "Directory nonexistent" : la sonde
+      # echouait systematiquement et, avec depends_on: service_healthy,
+      # l'API ne demarrait jamais.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/6333"]
       interval: 10s
       timeout: 3s
       retries: 5

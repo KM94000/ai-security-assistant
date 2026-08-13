@@ -48,9 +48,11 @@ def chunk_text(text: str, chunk_size: int, overlap: int) -> list[str]:
     pas = chunk_size - overlap
     fragments = [text[debut : debut + chunk_size] for debut in range(0, len(text), pas)]
 
-    # La derniere fenetre peut n'etre qu'un recouvrement du fragment precedent,
-    # sans rien apporter de neuf. On l'ecarte plutot que d'indexer un doublon.
-    if len(fragments) > 1 and fragments[-1] in fragments[-2]:
+    # Les dernieres fenetres peuvent n'etre que des recouvrements du fragment
+    # precedent, sans rien apporter de neuf. Une boucle et non un test unique :
+    # un recouvrement eleve en produit plusieurs a la suite, et n'en retirer
+    # qu'un laissait des quasi-doublons occuper des places du top-k.
+    while len(fragments) > 1 and fragments[-1] in fragments[-2]:
         fragments.pop()
 
     return [fragment for fragment in fragments if fragment.strip()]
