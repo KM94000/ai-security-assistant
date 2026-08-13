@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     # Changer de modèle impose de recréer la collection et de ré-ingérer.
     embedding_dimension: int = 384
 
+    # --- Base vectorielle (ADR-0005 : Qdrant) ---
+    qdrant_url: str = "http://localhost:6333"
+    qdrant_collection: str = "aisec_docs"
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
 
