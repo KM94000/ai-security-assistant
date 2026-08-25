@@ -73,3 +73,50 @@ jobs:
         run: pip-audit --skip-editable
       - name: SAST du code applicatif (bandit)
         run: bandit -r src -c pyproject.toml
+
+  # Ticket 18 : les tests d'integration tournent en CI, contre un vrai Qdrant.
+  #
+  # C'est le job qui manquait, et son absence a coute cher : le healthcheck du
+  # docker-compose etait casse depuis le ticket 9 et passait ruff, mypy, 104
+  # tests, trois scans de securite et `docker compose config`. Aucun controle
+  # statique ne demarre de conteneur — seul un vrai demarrage revele ce genre
+  # de defaut.
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      qdrant:
+        image: qdrant/qdrant:v1.18.3
+        ports:
+          - 6333:6333
+        # Meme piege que dans docker-compose : l'image n'a ni curl, ni wget, ni
+        # nc, et /dev/tcp est une extension bash alors que le shell par defaut
+        # est dash. D'ou l'invocation explicite de bash.
+        options: >-
+          --health-cmd "bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+          --health-start-period 10s
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Installer les dependances
+        run: pip install -e ".[dev]"
+      - name: Cache du modele d'embeddings
+        # MiniLM pese ~90 Mo. Sans cache, chaque execution le retelecharge
+        # depuis Hugging Face, ce qui allonge le job et depend de la
+        # disponibilite d'un service tiers.
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: huggingface-${{ hashFiles('src/aisecassist/config.py') }}
+          restore-keys: huggingface-
+      - name: Tests d'integration
+        # `not llm` exclut les tests qui exigent un serveur Ollama : 4,9 Go de
+        # poids ne se telechargent pas raisonnablement a chaque execution. Ces
+        # tests restent a lancer en local avec `pytest -m integration`.
+        run: pytest -m "integration and not llm" -v

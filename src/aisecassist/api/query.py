@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterator, Sequence
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
@@ -26,8 +26,49 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# Reponses d'erreur documentees dans OpenAPI. Sans elles, /docs laisse croire
+# qu'un appel ne peut que reussir, et un client n'a aucune raison de prevoir
+# les cas de panne.
+_REPONSES_ERREUR: dict[int | str, dict[str, Any]] = {
+    422: {
+        "description": (
+            "Requete invalide : champ absent, vide, trop long, de mauvais type, "
+            "ou champ inattendu. Le corps de la reponse nomme le champ fautif."
+        )
+    },
+    503: {
+        "description": (
+            "Une dependance est indisponible (base vectorielle ou modele). Le "
+            "message est volontairement generique : le detail part dans les logs "
+            "du serveur, jamais dans la reponse."
+        )
+    },
+}
 
-@router.post("/query", response_model=QueryResponse, tags=["rag"])
+# Exemple de flux, affiche dans /docs : OpenAPI ne sait pas decrire une suite
+# d'evenements SSE, seulement un corps de reponse. Sans cet exemple, un client
+# n'a aucun moyen de deviner le format.
+_EXEMPLE_FLUX = """event: sources
+data: {"sources": [{"source": "owasp-llm-top10.md", "score": 0.58}]}
+
+event: token
+data: {"text": "L'injection indirecte "}
+
+event: token
+data: {"text": "passe par un document ingere."}
+
+event: done
+data: {}
+"""
+
+
+@router.post(
+    "/query",
+    response_model=QueryResponse,
+    tags=["rag"],
+    summary="Poser une question, recevoir la reponse complete",
+    responses=_REPONSES_ERREUR,
+)
 async def query(
     payload: QueryRequest,
     services: Annotated[Services, Depends(get_services)],
@@ -47,7 +88,24 @@ async def query(
     )
 
 
-@router.post("/query/stream", tags=["rag"])
+@router.post(
+    "/query/stream",
+    tags=["rag"],
+    summary="Poser une question, recevoir la reponse au fil de la generation",
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "description": (
+                "Flux Server-Sent Events. Trois types d'evenements : `sources` en "
+                "premier, puis autant de `token` que de fragments, enfin `done`. "
+                "Une panne survenue apres l'ouverture du flux produit un evenement "
+                "`error` — le statut reste 200, les en-tetes etant deja envoyes."
+            ),
+            "content": {"text/event-stream": {"example": _EXEMPLE_FLUX}},
+        },
+        **_REPONSES_ERREUR,
+    },
+)
 async def query_stream(
     payload: QueryRequest,
     services: Annotated[Services, Depends(get_services)],

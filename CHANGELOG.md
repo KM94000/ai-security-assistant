@@ -1,5 +1,31 @@
 # Changelog
 
+## [Non publie] - M2, tickets 16 et 18 : doc OpenAPI et integration en CI
+### Ajoute
+- **Job CI `integration`** : les tests d'integration tournent desormais contre
+  un vrai conteneur Qdrant, demarre en service GitHub Actions. C'est le job qui
+  manquait — le healthcheck casse du compose avait traverse ruff, mypy, 104
+  tests, trois scans de securite et `docker compose config` sans etre vu.
+- Marqueur pytest `llm`, distinct de `integration` : la CI peut demarrer Qdrant
+  et telecharger MiniLM (90 Mo), pas heberger Ollama et ses 4,9 Go. Elle lance
+  `pytest -m "integration and not llm"` ; les 4 tests restants se lancent en
+  local avec `pytest -m integration`.
+- Cache du modele d'embeddings en CI.
+- Documentation OpenAPI : description de l'API, tags decrits, resumes de
+  routes, reponses 422 et 503 documentees, exemples sur `QueryResponse` et
+  `SourceRef`, et un exemple de flux SSE — OpenAPI ne sachant pas decrire une
+  suite d'evenements, sans lui un client ne peut pas deviner le format.
+- La version affichee dans `/docs` est lue depuis les metadonnees du paquet :
+  une constante en dur finit toujours par diverger de `pyproject.toml`.
+- `tests/unit/test_openapi.py` : la documentation se degrade en silence, ces
+  tests transforment l'exigence en controle automatique.
+
+### Modifie
+- `/health` : resume explicite au lieu du libelle derive du nom de fonction, et
+  docstring precisant qu'il ne sonde volontairement pas les dependances — une
+  sonde de vivacite qui echoue parce que Qdrant est momentanement absent ferait
+  redemarrer l'API en boucle.
+
 ## [Non publie] - M2, ticket 14 : streaming SSE
 ### Ajoute
 - `POST /query/stream` : meme reponse que `/query`, emise au fil de la

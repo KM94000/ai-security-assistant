@@ -41,12 +41,39 @@ class SourceRef(BaseModel):
     verifiable, et une reponse non verifiable est inutilisable (LLM09).
     """
 
-    source: str
-    score: float
+    model_config = ConfigDict(
+        json_schema_extra={"example": {"source": "owasp-llm-top10.md", "score": 0.58}}
+    )
+
+    source: str = Field(description="Nom du document dont l'extrait provient.")
+    score: float = Field(description="Similarite entre la question et l'extrait, de 0 a 1.")
 
 
 class QueryResponse(BaseModel):
     """Reponse du systeme, accompagnee de ses sources."""
 
-    answer: str
-    sources: list[SourceRef]
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "answer": (
+                    "L'injection indirecte transite par un document ingere par le "
+                    "systeme. La charge n'agit pas au moment ou elle entre, mais au "
+                    "moment ou elle est recuperee, souvent pour un autre utilisateur."
+                ),
+                "sources": [
+                    {"source": "owasp-llm-top10.md", "score": 0.58},
+                    {"source": "mitre-atlas.md", "score": 0.54},
+                ],
+            }
+        }
+    )
+
+    answer: str = Field(
+        description=(
+            "Reponse construite a partir du contexte. Si le corpus ne permet pas de "
+            "repondre, contient un refus explicite plutot qu'une supposition."
+        )
+    )
+    sources: list[SourceRef] = Field(
+        description="Extraits reellement recuperes, du plus pertinent au moins pertinent."
+    )

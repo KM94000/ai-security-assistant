@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from importlib.metadata import PackageNotFoundError, version
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -22,6 +23,55 @@ from aisecassist.vectorstore.base import VectorStoreError
 logger = logging.getLogger(__name__)
 
 
+def _version() -> str:
+    """Lit la version depuis les metadonnees du paquet installe.
+
+    Plutot qu'une constante ici : une version ecrite en dur finit toujours par
+    diverger de celle de `pyproject.toml`, et c'est la doc publique qui ment.
+    """
+    try:
+        return version("ai-security-assistant")
+    except PackageNotFoundError:  # pragma: no cover - paquet non installe
+        return "0.0.0+inconnu"
+
+
+_DESCRIPTION = """Assistant de **cybersecurite** fonde sur un RAG : les reponses sont construites
+a partir d'un corpus de referentiels indexe (OWASP LLM Top 10, MITRE ATLAS,
+NIST AI RMF), et **toujours accompagnees de leurs sources**.
+
+### Verifier plutot que croire
+
+Chaque reponse cite les extraits qui l'ont alimentee, avec leur score de
+similarite. Une reponse de securite qu'on ne peut pas verifier n'est pas
+utilisable : si le corpus ne contient pas de quoi repondre, le service le dit
+explicitement au lieu de supposer.
+
+### Deux facons d'interroger
+
+- `POST /query` renvoie la reponse complete en une fois.
+- `POST /query/stream` la renvoie au fil de la generation. Sur un modele local,
+  le premier texte apparait en environ deux secondes contre une vingtaine pour
+  la reponse complete.
+
+### Gestion des erreurs
+
+Une entree invalide donne un **422** decrivant le champ fautif. Une panne de
+dependance donne un **503** volontairement generique : le detail technique part
+dans les logs du serveur, jamais dans la reponse.
+"""
+
+_TAGS = [
+    {
+        "name": "rag",
+        "description": "Interrogation du corpus. Toute reponse est sourcee.",
+    },
+    {
+        "name": "monitoring",
+        "description": "Sondes de supervision, appelees par la plateforme d'hebergement.",
+    },
+]
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Cree les services au demarrage et ferme leurs clients a l'arret."""
@@ -32,7 +82,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await close_services(app.state.services)
 
 
-app = FastAPI(title=settings.app_name, lifespan=lifespan)
+app = FastAPI(
+    title=settings.app_name,
+    description=_DESCRIPTION,
+    version=_version(),
+    openapi_tags=_TAGS,
+    lifespan=lifespan,
+)
 app.include_router(health_router)
 app.include_router(query_router)
 

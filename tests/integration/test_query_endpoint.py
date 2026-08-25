@@ -28,7 +28,7 @@ from aisecassist.ingestion.pipeline import IngestionPipeline
 from aisecassist.main import app
 from aisecassist.vectorstore.qdrant import QdrantVectorStore
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.llm]
 
 _CORPUS = Path(__file__).resolve().parents[2] / "data" / "corpus"
 
