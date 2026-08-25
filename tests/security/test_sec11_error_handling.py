@@ -257,7 +257,14 @@ def test_le_flux_emet_les_sources_puis_les_fragments_puis_la_fin() -> None:
     assert reponse.headers["content-type"].startswith("text/event-stream")
 
     evenements = _evenements(reponse.text)
-    assert [nom for nom, _ in evenements] == ["sources", "token", "token", "token", "done"]
+    noms = [nom for nom, _ in evenements]
+
+    # L'ordre structurel est contractuel : les sources d'abord, `done` en
+    # dernier. Le nombre d'evenements `token`, lui, ne l'est pas — le guardrail
+    # de sortie regroupe les fragments courts dans sa fenetre de retenue.
+    assert noms[0] == "sources"
+    assert noms[-1] == "done"
+    assert set(noms[1:-1]) == {"token"}
     assert evenements[0][1]["sources"] == [{"source": "owasp.md", "score": 0.87}]
     assert "".join(charge["text"] for nom, charge in evenements if nom == "token") == (
         "Il faut valider."
