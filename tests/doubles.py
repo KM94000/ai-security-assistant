@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Sequence
 
 from aisecassist.embeddings.base import Embedder
+from aisecassist.generation.service import GenerationService
 from aisecassist.llm.base import LLMProvider
 from aisecassist.vectorstore.base import SearchResult, VectorStore
 
@@ -72,6 +73,27 @@ class FakeLLM(LLMProvider):
         yield self._response
 
 
+class StreamingLLM(LLMProvider):
+    """Emet une suite de fragments fixee, pour tester le streaming.
+
+    `FakeLLM` n'emet qu'un seul fragment : il ne prouverait rien du decoupage
+    ni de l'ordre.
+    """
+
+    def __init__(self, fragments: Sequence[str]) -> None:
+        self._fragments = list(fragments)
+        self.prompts: list[str] = []
+
+    async def complete(self, prompt: str) -> str:
+        self.prompts.append(prompt)
+        return "".join(self._fragments)
+
+    async def stream(self, prompt: str) -> AsyncIterator[str]:
+        self.prompts.append(prompt)
+        for fragment in self._fragments:
+            yield fragment
+
+
 class ExplodingLLM(LLMProvider):
     """Leve l'erreur fournie a chaque appel, pour tester la gestion de panne."""
 
@@ -110,3 +132,14 @@ class ExplodingVectorStore(VectorStore):
 def extrait(text: str, source: str = "doc.md", score: float = 0.9) -> SearchResult:
     """Raccourci de construction d'un `SearchResult`."""
     return SearchResult(text=text, source=source, score=score)
+
+
+def make_generation(llm: LLMProvider, max_answer_chars: int = 8_000) -> GenerationService:
+    """Construit un `GenerationService` pour les tests.
+
+    Le plafond de longueur est un argument obligatoire du service : il vient de
+    la configuration et ne doit pas avoir de valeur implicite en production.
+    Cette fabrique evite de le repeter dans chaque test, tout en laissant ceux
+    qui verifient la troncature le fixer explicitement.
+    """
+    return GenerationService(llm, max_answer_chars=max_answer_chars)

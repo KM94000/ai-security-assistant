@@ -47,7 +47,7 @@ def build_services() -> Services:
 
     return Services(
         retrieval=RetrievalService(embedder, store, settings.retrieval_top_k),
-        generation=GenerationService(llm),
+        generation=GenerationService(llm, max_answer_chars=settings.max_answer_chars),
         store=store,
         llm=llm,
     )

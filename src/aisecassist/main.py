@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 
 from aisecassist.api.deps import build_services, close_services
 from aisecassist.api.health import router as health_router
+from aisecassist.api.messages import MESSAGE_INATTENDU, MESSAGE_INDISPONIBLE
 from aisecassist.api.query import router as query_router
 from aisecassist.config import settings
 from aisecassist.embeddings.base import EmbedderError
@@ -19,13 +20,6 @@ from aisecassist.retrieval.service import RetrievalError
 from aisecassist.vectorstore.base import VectorStoreError
 
 logger = logging.getLogger(__name__)
-
-# Messages renvoyes au client. Volontairement generiques : le detail technique
-# part dans les logs, jamais dans la reponse. Une trace d'exception exposee
-# renseigne un attaquant sur la pile, les chemins et les versions
-# (CLAUDE.md section 6 ; SECURITY.md, SEC-11).
-_MESSAGE_INDISPONIBLE = "Le service est temporairement indisponible. Reessayez plus tard."
-_MESSAGE_INATTENDU = "Une erreur interne est survenue."
 
 
 @asynccontextmanager
@@ -54,11 +48,11 @@ async def dependance_indisponible(request: Request, exc: Exception) -> JSONRespo
     apprend la topologie interne. Le detail est journalise cote serveur.
     """
     logger.warning("Dependance indisponible sur %s : %s", request.url.path, exc)
-    return JSONResponse(status_code=503, content={"detail": _MESSAGE_INDISPONIBLE})
+    return JSONResponse(status_code=503, content={"detail": MESSAGE_INDISPONIBLE})
 
 
 @app.exception_handler(Exception)
 async def erreur_inattendue(request: Request, exc: Exception) -> JSONResponse:
     """Filet de securite : aucune exception non prevue ne doit fuiter vers le client."""
     logger.exception("Erreur inattendue sur %s", request.url.path, exc_info=exc)
-    return JSONResponse(status_code=500, content={"detail": _MESSAGE_INATTENDU})
+    return JSONResponse(status_code=500, content={"detail": MESSAGE_INATTENDU})
