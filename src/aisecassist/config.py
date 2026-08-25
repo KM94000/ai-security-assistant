@@ -47,6 +47,13 @@ class Settings(BaseSettings):
     # --- Recherche ---
     retrieval_top_k: int = Field(default=5, gt=0)
 
+    # --- Generation ---
+    # Plafond de longueur d'une reponse (SEC-10). En streaming surtout : une
+    # generation qui part en boucle produirait des fragments indefiniment, et
+    # rien du cote client ne l'arreterait. Le plafond est applique cote serveur,
+    # ou il protege reellement.
+    max_answer_chars: int = Field(default=8_000, gt=0)
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     @model_validator(mode="after")

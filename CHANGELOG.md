@@ -1,5 +1,39 @@
 # Changelog
 
+## [Non publie] - M2, ticket 14 : streaming SSE
+### Ajoute
+- `POST /query/stream` : meme reponse que `/query`, emise au fil de la
+  generation. Trois types d'evenements — `sources` d'abord, puis autant de
+  `token` que de fragments, enfin `done`. Les sources arrivent avant le texte
+  pour que le client puisse les afficher pendant que la reponse se construit.
+- `GenerationService.stream_answer()`, adosse a `LLMProvider.stream()` pose des
+  le ticket 8 (ADR-0008) — l'anticipation evite ici toute reecriture.
+- Module `api/sse.py` : encodage des evenements. La charge est serialisee en
+  JSON, ce qui neutralise par construction le piege du format — un saut de
+  ligne brut dans `data` termine l'evenement, et une reponse de modele en
+  contient des le premier paragraphe.
+- Module `api/messages.py` : messages d'erreur partages entre le chemin JSON et
+  le chemin streame, pour qu'ils disent exactement la meme chose.
+- Plafond `max_answer_chars` (8 000 par defaut), applique cote serveur fragment
+  par fragment, avec un marqueur explicite quand la troncature a lieu.
+
+### Securite
+- **SEC-10 etendu** : au plafond de longueur de question s'ajoute celui de la
+  reponse. En streaming, c'est le seul endroit ou il protege — une generation
+  qui part en boucle emettrait sinon des fragments indefiniment, et rien du
+  cote client ne l'arreterait.
+- **SEC-11 etendu au chemin streame.** Une fois le flux ouvert, le statut 200 et
+  les en-tetes sont deja partis : les gestionnaires d'exception ne peuvent plus
+  s'appliquer. Sans rattrapage explicite dans le generateur, le streaming
+  laisserait fuiter ce que le chemin classique masque. La panne devient un
+  evenement `error` portant le meme message generique.
+
+### Verifie
+- Incrementalite mesuree sur une vraie connexion HTTP : sources a 0,42 s,
+  premier fragment a 2,16 s, dernier a 21,34 s — soit 19,2 s d'etalement sur
+  113 fragments. `TestClient` ne peut pas le prouver : son transport ASGI
+  tamponne le corps entier avant de le rendre.
+
 ## [Non publie] - Revue de M1 : correctifs
 ### Corrige
 - **docker-compose** : le healthcheck Qdrant utilisait `/dev/tcp`, une extension

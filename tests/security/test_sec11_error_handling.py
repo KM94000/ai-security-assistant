@@ -10,6 +10,7 @@ serveur et les versions installees — c'est du travail de reconnaissance offert
 
 from __future__ import annotations
 
+import json
 from typing import Any, cast
 
 import pytest
@@ -27,7 +28,9 @@ from tests.doubles import (
     FakeEmbedder,
     FakeLLM,
     FakeVectorStore,
+    StreamingLLM,
     extrait,
+    make_generation,
 )
 
 # Marqueurs qui trahiraient une fuite d'information interne dans une reponse.
@@ -89,7 +92,7 @@ def _assert_sans_fuite(corps: str) -> None:
 def test_une_entree_malformee_donne_un_422_sans_fuite(payload: dict[str, object]) -> None:
     services = _services(
         RetrievalService(FakeEmbedder(), FakeVectorStore(), default_k=5),
-        GenerationService(FakeLLM()),
+        make_generation(FakeLLM()),
     )
 
     reponse = _client(services).post("/query", json=payload)
@@ -101,7 +104,7 @@ def test_une_entree_malformee_donne_un_422_sans_fuite(payload: dict[str, object]
 def test_un_corps_qui_nest_pas_du_json_donne_un_422() -> None:
     services = _services(
         RetrievalService(FakeEmbedder(), FakeVectorStore(), default_k=5),
-        GenerationService(FakeLLM()),
+        make_generation(FakeLLM()),
     )
 
     reponse = _client(services).post(
@@ -121,7 +124,7 @@ def test_une_panne_du_modele_donne_un_503_sans_detail_interne() -> None:
     """Le message d'erreur d'Ollama ne doit pas atteindre le client."""
     services = _services(
         RetrievalService(FakeEmbedder(), FakeVectorStore([extrait("contenu")]), default_k=5),
-        GenerationService(ExplodingLLM(LLMError("connexion refusee sur http://localhost:11434"))),
+        make_generation(ExplodingLLM(LLMError("connexion refusee sur http://localhost:11434"))),
     )
 
     reponse = _client(services).post("/query", json={"question": "question"})
@@ -138,7 +141,7 @@ def test_une_panne_de_la_base_vectorielle_donne_un_503_sans_detail_interne() -> 
             ExplodingVectorStore(VectorStoreError("qdrant injoignable sur http://localhost:6333")),
             default_k=5,
         ),
-        GenerationService(FakeLLM()),
+        make_generation(FakeLLM()),
     )
 
     reponse = _client(services).post("/query", json={"question": "question"})
@@ -161,7 +164,7 @@ def test_une_charge_xss_dans_la_question_ne_ressort_pas_telle_quelle() -> None:
     charge = "<script>alert('xss')</script>"
     services = _services(
         RetrievalService(FakeEmbedder(), FakeVectorStore([extrait("contenu")]), default_k=5),
-        GenerationService(FakeLLM("reponse neutre")),
+        make_generation(FakeLLM("reponse neutre")),
     )
 
     reponse = _client(services).post("/query", json={"question": charge})
@@ -175,7 +178,7 @@ def test_une_question_de_longueur_maximale_est_acceptee() -> None:
     """La borne doit etre inclusive : rejeter la valeur limite serait un faux positif."""
     services = _services(
         RetrievalService(FakeEmbedder(), FakeVectorStore([extrait("contenu")]), default_k=5),
-        GenerationService(FakeLLM()),
+        make_generation(FakeLLM()),
     )
 
     reponse = _client(services).post("/query", json={"question": "x" * 2_000})
@@ -193,7 +196,7 @@ def test_une_question_valide_renvoie_une_reponse_sourcee() -> None:
             FakeVectorStore([extrait("Valider les entrees.", source="owasp.md", score=0.87)]),
             default_k=5,
         ),
-        GenerationService(FakeLLM("Il faut valider les entrees.")),
+        make_generation(FakeLLM("Il faut valider les entrees.")),
     )
 
     reponse = _client(services).post("/query", json={"question": "Comment mitiger une XSS ?"})
@@ -208,7 +211,7 @@ def test_sans_extrait_pertinent_la_reponse_est_un_refus_explicite() -> None:
     """Mieux vaut refuser que supposer : c'est la parade a la desinformation (LLM09)."""
     services = _services(
         RetrievalService(FakeEmbedder(), FakeVectorStore([]), default_k=5),
-        GenerationService(FakeLLM()),
+        make_generation(FakeLLM()),
     )
 
     reponse = _client(services).post("/query", json={"question": "sujet absent du corpus"})
@@ -217,3 +220,101 @@ def test_sans_extrait_pertinent_la_reponse_est_un_refus_explicite() -> None:
     corps = reponse.json()
     assert "ne contient aucun extrait pertinent" in corps["answer"]
     assert corps["sources"] == []
+
+
+# --- Chemin streame : les memes garanties -----------------------------------
+#
+# Une fois le flux ouvert, le statut 200 et les en-tetes sont deja partis : les
+# gestionnaires d'exception de l'application ne peuvent plus s'appliquer. Sans
+# rattrapage explicite dans le generateur, le chemin streame laisserait fuiter
+# ce que le chemin classique masque.
+
+
+def _evenements(corps: str) -> list[tuple[str, dict[str, Any]]]:
+    """Decoupe un corps SSE en couples (nom d'evenement, charge decodee)."""
+    resultats: list[tuple[str, dict[str, Any]]] = []
+    for bloc in corps.strip().split("\n\n"):
+        lignes = bloc.splitlines()
+        nom = next(li.removeprefix("event: ") for li in lignes if li.startswith("event: "))
+        charge = next(li.removeprefix("data: ") for li in lignes if li.startswith("data: "))
+        resultats.append((nom, json.loads(charge)))
+    return resultats
+
+
+def test_le_flux_emet_les_sources_puis_les_fragments_puis_la_fin() -> None:
+    services = _services(
+        RetrievalService(
+            FakeEmbedder(),
+            FakeVectorStore([extrait("Valider.", source="owasp.md", score=0.87)]),
+            default_k=5,
+        ),
+        make_generation(StreamingLLM(["Il ", "faut ", "valider."])),
+    )
+
+    reponse = _client(services).post("/query/stream", json={"question": "Comment ?"})
+
+    assert reponse.status_code == 200
+    assert reponse.headers["content-type"].startswith("text/event-stream")
+
+    evenements = _evenements(reponse.text)
+    assert [nom for nom, _ in evenements] == ["sources", "token", "token", "token", "done"]
+    assert evenements[0][1]["sources"] == [{"source": "owasp.md", "score": 0.87}]
+    assert "".join(charge["text"] for nom, charge in evenements if nom == "token") == (
+        "Il faut valider."
+    )
+
+
+def test_une_panne_pendant_le_flux_devient_un_evenement_erreur_sans_fuite() -> None:
+    """Le cas que les gestionnaires d'exception ne peuvent plus attraper."""
+    services = _services(
+        RetrievalService(FakeEmbedder(), FakeVectorStore([extrait("contenu")]), default_k=5),
+        make_generation(ExplodingLLM(LLMError("connexion refusee sur http://localhost:11434"))),
+    )
+
+    reponse = _client(services).post("/query/stream", json={"question": "question"})
+
+    # Le statut reste 200 : les en-tetes etaient deja partis quand la panne est
+    # survenue. C'est l'evenement qui porte l'erreur, pas le code HTTP.
+    assert reponse.status_code == 200
+
+    evenements = _evenements(reponse.text)
+    noms = [nom for nom, _ in evenements]
+    assert "error" in noms
+    assert "done" not in noms, "le flux ne doit pas se declarer termine apres une panne"
+
+    detail = next(charge["detail"] for nom, charge in evenements if nom == "error")
+    assert "connexion refusee" not in detail
+    _assert_sans_fuite(reponse.text)
+
+
+def test_une_entree_malformee_sur_le_flux_donne_un_422_avant_ouverture() -> None:
+    """La validation precede l'ouverture du flux : un 4xx reste possible."""
+    services = _services(
+        RetrievalService(FakeEmbedder(), FakeVectorStore(), default_k=5),
+        make_generation(FakeLLM()),
+    )
+
+    reponse = _client(services).post("/query/stream", json={"question": ""})
+
+    assert reponse.status_code == 422
+    _assert_sans_fuite(reponse.text)
+
+
+def test_une_panne_de_recherche_sur_le_flux_donne_un_503_avant_ouverture() -> None:
+    """La recherche a lieu avant d'ouvrir le flux, deliberement.
+
+    Tant que rien n'est emis, une panne se traduit encore par un 503 propre.
+    """
+    services = _services(
+        RetrievalService(
+            FakeEmbedder(),
+            ExplodingVectorStore(VectorStoreError("qdrant injoignable sur http://localhost:6333")),
+            default_k=5,
+        ),
+        make_generation(FakeLLM()),
+    )
+
+    reponse = _client(services).post("/query/stream", json={"question": "question"})
+
+    assert reponse.status_code == 503
+    _assert_sans_fuite(reponse.text)

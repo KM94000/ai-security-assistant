@@ -20,7 +20,14 @@ class SentenceTransformerLike(Protocol):
 
     def get_embedding_dimension(self) -> int | None: ...
 
-    def encode(self, sentences: list[str]) -> Any: ...
+    # Le `/` rend le parametre **positionnel uniquement**, et ce n'est pas un
+    # detail de style : sans lui, son nom entre dans la verification de
+    # compatibilite structurelle. sentence-transformers 6.0 a renomme ce
+    # parametre de `sentences` en `inputs`, ce qui a suffi a faire echouer le
+    # typage alors que l'appel positionnel fonctionne dans les deux versions.
+    # Declarer l'intention — « on n'appelle jamais ce parametre par son nom » —
+    # rend le protocole insensible a ce genre de renommage.
+    def encode(self, sentences: list[str], /) -> Any: ...
 
 
 ModelLoader = Callable[[str], SentenceTransformerLike]

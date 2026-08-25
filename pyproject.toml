@@ -22,8 +22,14 @@ dependencies = [
     # d'evenements. Arrive aussi via starlette, mais un import direct se declare.
     "anyio>=4.0",
     # Embeddings locaux (ADR-0006). Tire torch : environ 200 Mo de wheel.
-    # Plancher a 5.7 : c'est la version verifiee, et celle ou l'on s'appuie sur
-    # get_embedding_dimension plutot que sur son alias deprecie.
+    # Plancher a 5.7 : version ou l'on s'appuie sur get_embedding_dimension
+    # plutot que sur son alias deprecie. Verifie en 5.7 et en 6.0.
+    #
+    # Pas de plafond majeur, mais une lecon : la sortie de la 6.0 a fait echouer
+    # la CI sans qu'une ligne de notre code ne change — le parametre de encode()
+    # y est renomme. Le protocole a ete rendu insensible a ce renommage plutot
+    # que de figer la version. La vraie parade a cette classe de probleme est un
+    # fichier de verrouillage (uv lock), a envisager en M6.
     "sentence-transformers>=5.7",
     # Base vectorielle (ADR-0005). Le mode ":memory:" du client embarque le
     # vrai moteur Qdrant : les tests unitaires n'ont besoin d'aucun conteneur.

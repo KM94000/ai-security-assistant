@@ -24,6 +24,15 @@ curl -X POST http://localhost:8000/query \
   -d '{"question":"Pourquoi l'"'"'injection indirecte est-elle plus dangereuse dans un RAG ?"}'
 ```
 
+Et la meme reponse, emise au fil de la generation (`-N` desactive le tampon de
+curl, sans quoi tout s'affiche d'un coup a la fin) :
+
+```bash
+curl -N -X POST http://localhost:8000/query/stream \
+  -H "Content-Type: application/json" \
+  -d '{"question":"Qu'"'"'est-ce que l'"'"'autonomie excessive d'"'"'un agent ?"}'
+```
+
 ## 🎯 Ce que ce projet demontre
 - Architecture RAG + agents pensee pour la production
 - Ingenierie logicielle pro : tests, CI/CD, Docker, observabilite, ADR
