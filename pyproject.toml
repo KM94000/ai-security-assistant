@@ -76,6 +76,10 @@ testpaths = ["tests"]
 addopts = "-m 'not integration'"
 markers = [
     "integration: necessite un service externe ou un modele telecharge",
+    # Marqueur distinct parce que la CI peut demarrer un conteneur Qdrant et
+    # telecharger MiniLM (90 Mo), mais pas heberger Ollama et ses 4,9 Go de
+    # poids. La CI lance donc : pytest -m "integration and not llm".
+    "llm: exige un serveur Ollama joignable ; non executable en CI",
 ]
 
 [tool.bandit]

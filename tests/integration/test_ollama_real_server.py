@@ -16,7 +16,7 @@ import pytest
 from aisecassist.config import settings
 from aisecassist.llm.ollama import OllamaProvider
 
-pytestmark = [pytest.mark.anyio, pytest.mark.integration]
+pytestmark = [pytest.mark.anyio, pytest.mark.integration, pytest.mark.llm]
 
 # Prompt volontairement trivial : on valide le contrat de l'API, pas la qualite
 # du modele. Plus la generation est courte, plus le test est rapide.

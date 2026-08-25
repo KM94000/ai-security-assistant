@@ -18,6 +18,8 @@ python -m aisecassist.ingestion.pipeline data/corpus
 uvicorn aisecassist.main:app --reload
 ```
 
+La documentation interactive est sur <http://localhost:8000/docs>.
+
 ```bash
 curl -X POST http://localhost:8000/query \
   -H "Content-Type: application/json" \
