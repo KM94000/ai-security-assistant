@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 from aisecassist.generation.prompt import REFUS_SANS_CONTEXTE, build_prompt
 from aisecassist.llm.base import LLMError, LLMProvider
+from aisecassist.security.output_guardrail import StreamRedactor, redact
 from aisecassist.vectorstore.base import SearchResult
 
 logger = logging.getLogger(__name__)
@@ -61,7 +62,12 @@ class GenerationService:
         if not reponse:
             raise LLMError("Le modele n'a produit aucun texte exploitable.")
 
-        return GeneratedAnswer(answer=self._plafonner(reponse), sources=prompt.sources)
+        # Le nonce est passe en litteral : le modele n'a aucune raison de le
+        # restituer, et le laisser passer revelerait la structure de la cloture.
+        assainie = redact(self._plafonner(reponse), literaux=(prompt.nonce,))
+        self._signaler_fuite(assainie.categories)
+
+        return GeneratedAnswer(answer=assainie.text, sources=prompt.sources)
 
     async def stream_answer(
         self, question: str, results: Sequence[SearchResult]
@@ -84,7 +90,9 @@ class GenerationService:
             return
 
         prompt = build_prompt(question, results)
+        redacteur = StreamRedactor(literaux=(prompt.nonce,))
         emis = 0
+        tronque = False
 
         async for fragment in self._llm.stream(prompt.text):
             if not fragment:
@@ -93,22 +101,39 @@ class GenerationService:
             # Le plafond est deja atteint et il reste des fragments : du contenu
             # a donc bien ete coupe.
             if emis >= self._max_answer_chars:
-                self._signaler_troncature()
-                yield MARQUEUR_TRONCATURE
-                return
+                tronque = True
+                break
 
             restant = self._max_answer_chars - emis
             # `>` et non `>=` : un fragment qui remplit exactement l'espace
             # restant n'est pas tronque. Si le flux s'arrete la, la reponse est
             # complete et annoncer une troncature serait faux.
             if len(fragment) > restant:
-                self._signaler_troncature()
-                yield fragment[:restant]
-                yield MARQUEUR_TRONCATURE
-                return
+                fragment = fragment[:restant]
+                tronque = True
 
             emis += len(fragment)
-            yield fragment
+            # Le plafond porte sur ce que le modele a produit, la redaction sur
+            # ce qui sort. Les deux ne se compensent pas : rediger d'abord
+            # permettrait a un secret long de consommer le budget a la place du
+            # contenu utile.
+            sortie = redacteur.feed(fragment)
+            if sortie:
+                yield sortie
+
+            if tronque:
+                break
+
+        # Le reliquat retenu par la fenetre de securite ne doit pas etre perdu.
+        reliquat = redacteur.flush()
+        if reliquat:
+            yield reliquat
+
+        self._signaler_fuite(redacteur.categories)
+
+        if tronque:
+            self._signaler_troncature()
+            yield MARQUEUR_TRONCATURE
 
     def _plafonner(self, reponse: str) -> str:
         """Applique le meme plafond a une reponse complete."""
@@ -116,6 +141,20 @@ class GenerationService:
             return reponse
         self._signaler_troncature()
         return reponse[: self._max_answer_chars] + MARQUEUR_TRONCATURE
+
+    def _signaler_fuite(self, categories: Sequence[str]) -> None:
+        """Journalise un declenchement du guardrail, sans jamais la valeur.
+
+        Un declenchement est anormal : un secret ne devrait pas atteindre le
+        modele. Le signal merite donc un avertissement, pas une ligne de debug
+        noyee dans le flux.
+        """
+        if categories:
+            logger.warning(
+                "Guardrail de sortie declenche : %s. Un secret a atteint le modele, "
+                "ce qui signale une defaillance en amont.",
+                ", ".join(categories),
+            )
 
     def _signaler_troncature(self) -> None:
         logger.warning(

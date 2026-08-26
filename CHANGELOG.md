@@ -1,5 +1,40 @@
 # Changelog
 
+## [Non publie] - M2, ticket 15 : guardrail de sortie (SEC-02)
+### Ajoute
+- Module `security/output_guardrail.py` : redaction des secrets a forme
+  reconnaissable avant renvoi au client — cles privees, jetons de fournisseurs,
+  affectations explicites — ainsi que du nonce de delimitation du prompt.
+- `StreamRedactor` : la meme protection sur le flux. Un secret coupe entre deux
+  fragments echapperait a une redaction fragment par fragment, et le client le
+  reconstituerait en concatenant. Deux mecanismes : une fenetre de retenue
+  dimensionnee sur la plus longue correspondance possible, et un recul de la
+  coupe devant une correspondance a cheval.
+- Journalisation en avertissement a chaque declenchement, avec les categories
+  et jamais les valeurs : journaliser un secret pour signaler qu'on l'a bloque
+  reviendrait a le divulguer une seconde fois, dans un endroit souvent moins
+  bien protege que la reponse HTTP.
+
+### Securite
+- **SEC-02 passe a partiel.** Le guardrail couvre les deux chemins, flux
+  compris. Restent hors portee : la detection de PII, et le fait que le modele
+  *refuse* de divulguer — un comportement, mesure en M5 avec SEC-03.
+- Le module est explicitement une **derniere ligne de defense** : un secret ne
+  devrait jamais atteindre le modele, et un declenchement signale une
+  defaillance en amont. Une detection par motifs attrape des formes connues,
+  pas tout ce qui est secret.
+
+### Modifie
+- Les tests de streaming n'affirment plus les frontieres de decoupage, seulement
+  l'ordre et le contenu. La fenetre de retenue regroupe les fragments courts, et
+  un protocole de streaming ne promet rien sur ces frontieres.
+
+### Mesure
+- Cout de la fenetre de retenue sur une vraie connexion HTTP : premier fragment
+  a 3,91 s contre 2,16 s sans guardrail, soit environ 1,7 s — la valeur attendue
+  pour 96 caracteres. Le flux reste incremental : 16,2 s d'etalement sur 225
+  fragments, progression lineaire.
+
 ## [Non publie] - M2, tickets 16 et 18 : doc OpenAPI et integration en CI
 ### Ajoute
 - **Job CI `integration`** : les tests d'integration tournent desormais contre
