@@ -143,8 +143,10 @@ barrières sont dans le code.
 | 35 | Benchmark latence + cache (sémantique si possible) | avant/après mesuré | SEC-10 (cache) |
 | 36 | Tableau de résultats dans le README | chiffres présentés proprement | — |
 
-**Note :** M6 est le bon moment pour l'expérience "MiniLM (384) vs mpnet (768)"
-— comparer qualité/latence, documenter la décision.
+**Note :** le modèle d'embeddings a été choisi sur mesure dès M2 (ADR-0010),
+parce que l'agent de M3 exige un retrieval capable de dire « rien ». M6 reprend
+la comparaison sur un jeu plus large avec RAGAS — reranker multilingue compris —
+et recalibre le seuil de pertinence.
 
 ---
 

@@ -13,6 +13,7 @@ from collections.abc import AsyncIterator, Sequence
 from aisecassist.embeddings.base import Embedder
 from aisecassist.generation.service import GenerationService
 from aisecassist.llm.base import LLMProvider
+from aisecassist.retrieval.service import RetrievalService
 from aisecassist.vectorstore.base import SearchResult, VectorStore
 
 DIMENSION = 4
@@ -143,3 +144,25 @@ def make_generation(llm: LLMProvider, max_answer_chars: int = 8_000) -> Generati
     qui verifient la troncature le fixer explicitement.
     """
     return GenerationService(llm, max_answer_chars=max_answer_chars)
+
+
+def make_retrieval(
+    store: VectorStore,
+    *,
+    embedder: Embedder | None = None,
+    default_k: int = 5,
+    min_score: float = 0.0,
+) -> RetrievalService:
+    """Construit un `RetrievalService` pour les tests.
+
+    Le seuil de pertinence est un argument obligatoire du service : il depend du
+    modele d'embeddings et vient de la configuration (ADR-0010). Ici il vaut 0 par
+    defaut, pour que les tests qui ne portent pas sur le filtrage n'en dependent
+    pas ; ceux qui le verifient le fixent explicitement.
+    """
+    return RetrievalService(
+        embedder or FakeEmbedder(),
+        store,
+        default_k,
+        min_score=min_score,
+    )

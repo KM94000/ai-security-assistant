@@ -1,7 +1,10 @@
 # ADR-0006 : Embeddings sentence-transformers all-MiniLM-L6-v2
 
-- Statut : accepté
+- Statut : remplacé par [ADR-0010](0010-multilingual-embeddings-relevance-threshold.md)
 - Date : 2026-08-05
+
+> Remplacé le 2026-09-17. Modèle anglais sur un corpus français : aucun seuil de
+> pertinence ne séparait les questions couvertes des questions hors sujet.
 
 ## Contexte
 Le RAG a besoin de transformer texte (chunks et questions) en vecteurs. Le choix

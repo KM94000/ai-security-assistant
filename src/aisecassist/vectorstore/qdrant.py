@@ -12,6 +12,7 @@ from qdrant_client import AsyncQdrantClient, models
 
 from aisecassist.vectorstore.base import (
     CollectionDimensionMismatchError,
+    CollectionEmbeddingModelMismatchError,
     SearchResult,
     VectorStore,
     VectorStoreError,
@@ -24,6 +25,9 @@ from aisecassist.vectorstore.base import (
 # gaspillant le budget de contexte.
 _POINT_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_DNS, "vectorstore.aisecassist")
 
+# Cle des metadonnees de collection ou est inscrit le modele d'embeddings.
+_CLE_MODELE = "embedding_model"
+
 logger = logging.getLogger(__name__)
 
 
@@ -33,17 +37,28 @@ class QdrantVectorStore(VectorStore):
     Le client est injectable : les tests utilisent `AsyncQdrantClient(":memory:")`,
     qui execute le vrai moteur Qdrant en memoire. On teste donc le comportement
     reel de la base, sans conteneur ni reseau.
+
+    Le store est lie a un modele d'embeddings, identifie jusqu'a la revision de
+    ses poids. Il l'inscrit dans chaque collection qu'il cree, et refuse de
+    travailler sur une collection qui en declare un autre — ou aucun (ADR-0010).
     """
 
     def __init__(
         self,
         url: str,
         collection: str,
+        *,
+        embedding_model: str,
         client: AsyncQdrantClient | None = None,
     ) -> None:
         self._collection = collection
+        self._embedding_model = embedding_model
         self._owns_client = client is None
         self._client = client or AsyncQdrantClient(url=url)
+        # Le modele n'est verifie qu'une fois par instance, et seulement quand la
+        # verification reussit. Une collection recreee pendant que l'API tourne
+        # est donc acceptee a la requete suivante, sans redemarrage.
+        self._modele_verifie = False
 
     async def ensure_collection(self, dimension: int) -> None:
         try:
@@ -59,20 +74,26 @@ class QdrantVectorStore(VectorStore):
                         size=dimension,
                         distance=models.Distance.COSINE,
                     ),
+                    # Inscrit dans la collection elle-meme : c'est le seul endroit
+                    # ou l'information survit a la configuration qui l'a produite.
+                    metadata={_CLE_MODELE: self._embedding_model},
                 )
             except Exception as exc:
                 raise VectorStoreError(
                     f"Creation de la collection {self._collection} echouee : {exc}"
                 ) from exc
+            self._modele_verifie = True
             return
 
-        actual = await self._collection_dimension()
+        configuration = await self._lire_configuration()
+        actual = self._dimension(configuration)
         if actual != dimension:
             raise CollectionDimensionMismatchError(
                 f"La collection {self._collection} attend des vecteurs de {actual} "
                 f"dimensions, or l'embedder en produit {dimension}. "
                 "Recreer la collection et re-ingerer, ou corriger embedding_model."
             )
+        self._verifier_modele(configuration)
 
     async def add(
         self,
@@ -91,6 +112,10 @@ class QdrantVectorStore(VectorStore):
         if not texts:
             return
 
+        # Ecrire dans l'espace d'un autre modele serait pire que d'y lire : le
+        # melange resterait en base, et plus rien ne permettrait de le demeler.
+        await self._exiger_le_modele_configure()
+
         points = [
             models.PointStruct(
                 id=_point_id(source, text),
@@ -108,6 +133,10 @@ class QdrantVectorStore(VectorStore):
     async def search(self, query_vector: Sequence[float], k: int) -> list[SearchResult]:
         if k <= 0:
             raise VectorStoreError(f"k doit etre strictement positif, recu {k}.")
+
+        # L'API ne passe jamais par `ensure_collection` : sans ce controle, une
+        # collection indexee avec un autre modele serait interrogee sans erreur.
+        await self._exiger_le_modele_configure()
 
         try:
             response = await self._client.query_points(
@@ -154,22 +183,52 @@ class QdrantVectorStore(VectorStore):
     ) -> None:
         await self.aclose()
 
-    async def _collection_dimension(self) -> int:
-        """Lit la dimension declaree par la collection existante."""
+    async def _exiger_le_modele_configure(self) -> None:
+        """Verifie le modele declare par la collection, sauf si c'est deja fait."""
+        if not self._modele_verifie:
+            self._verifier_modele(await self._lire_configuration())
+
+    async def _lire_configuration(self) -> models.CollectionConfig:
+        """Lit la configuration de la collection existante."""
         try:
             info = await self._client.get_collection(self._collection)
         except Exception as exc:
             raise VectorStoreError(
                 f"Lecture de la collection {self._collection} echouee : {exc}"
             ) from exc
+        return info.config
 
-        params = info.config.params.vectors
+    def _dimension(self, configuration: models.CollectionConfig) -> int:
+        """Extrait la dimension declaree par la collection."""
+        params = configuration.params.vectors
         if not isinstance(params, models.VectorParams):
             raise VectorStoreError(
                 f"La collection {self._collection} utilise des vecteurs nommes ; "
                 "cette configuration n'est pas prise en charge."
             )
         return params.size
+
+    def _verifier_modele(self, configuration: models.CollectionConfig) -> None:
+        """Refuse une collection dont les vecteurs ne viennent pas du modele configure."""
+        declare = (configuration.metadata or {}).get(_CLE_MODELE)
+        if declare == self._embedding_model:
+            self._modele_verifie = True
+            return
+
+        if declare is None:
+            raise CollectionEmbeddingModelMismatchError(
+                f"La collection {self._collection} ne declare pas le modele d'embeddings "
+                "qui a produit ses vecteurs : elle est anterieure a l'ADR-0010. Rien ne "
+                f"garantit qu'ils soient comparables a ceux de {self._embedding_model}. "
+                "Recreer la collection et re-ingerer."
+            )
+        raise CollectionEmbeddingModelMismatchError(
+            f"La collection {self._collection} a ete indexee avec {declare}, or la "
+            f"configuration utilise {self._embedding_model}. A dimension egale, deux "
+            "modeles produisent des espaces incomparables : la recherche repondrait sans "
+            "erreur, mais au hasard. Recreer la collection et re-ingerer, ou realigner "
+            "EMBEDDING_MODEL et EMBEDDING_MODEL_REVISION."
+        )
 
 
 def _point_id(source: str, text: str) -> str:

@@ -29,7 +29,7 @@ _DIM = 4
 
 
 class _FakeEmbedder(Embedder):
-    """Vectoriseur deterministe : ce test porte sur l'ingestion, pas sur MiniLM."""
+    """Vectoriseur deterministe : ce test porte sur l'ingestion, pas sur le modele."""
 
     @property
     def dimension(self) -> int:
@@ -45,7 +45,9 @@ async def pipeline() -> AsyncIterator[IngestionPipeline]:
     try:
         yield IngestionPipeline(
             _FakeEmbedder(),
-            QdrantVectorStore(url="", collection="sec13", client=client),
+            QdrantVectorStore(
+                url="", collection="sec13", embedding_model="double@test", client=client
+            ),
             chunk_size=100,
             chunk_overlap=10,
             max_document_bytes=1_000,

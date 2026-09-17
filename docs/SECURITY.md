@@ -134,7 +134,7 @@ red team LLM.
 | **SEC-12** | Classique | Fuite via logs | vérifier qu'aucun secret/PII n'apparaît dans logs/traces | logs propres | P1 | M4 | ⬜ |
 | **SEC-13** | Classique | Validation d'ingestion | fichier surdimensionné / type inattendu | rejeté, pas de crash | P1 | M1 | ✅ `tests/security/test_sec13_ingestion_limits.py` — taille (vérifiée **avant** lecture), extension hors liste blanche, binaire déguisé ; et le pipeline continue en nommant chaque document écarté |
 | **SEC-14** | Access control | Authz API | accès sans clé / à une ressource d'un autre | 401/403 | P0 | M5 | ⬜ |
-| **SEC-15** | LLM03 | Supply chain (CI) | dépendance vulnérable, secret commité, code à risque | CI rouge (pip-audit/gitleaks/bandit) | P1 | M5 | 🟡 gitleaks + pip-audit + bandit actifs en CI ; Dependabot et épinglage restent à faire (ticket 31) |
+| **SEC-15** | LLM03 | Supply chain (CI) | dépendance vulnérable, secret commité, code à risque | CI rouge (pip-audit/gitleaks/bandit) | P1 | M5 | 🟡 gitleaks + pip-audit + bandit actifs en CI ; le modèle d'embeddings est épinglé à sa révision (ADR-0010) ; Dependabot et épinglage des dépendances restent à faire (ticket 31) |
 
 ### Ordre de priorité conseillé
 1. **P0 d'abord** : SEC-01, SEC-01b, SEC-02, SEC-03, SEC-05, SEC-06, SEC-11,
@@ -155,8 +155,13 @@ red team LLM.
   barrières déterministes côté code.
 - **Injection indirecte** : le danger n'est pas dans la conversation mais dans
   les **données** que le système ingère/récupère. Surface la plus sous-estimée.
-- **Cohérence dimension embeddings ↔ collection** : un mismatch silencieux
-  dégrade la recherche sans erreur visible.
+- **Cohérence modèle d'embeddings ↔ collection** : un mismatch silencieux
+  dégrade la recherche sans erreur visible — **même à dimension égale**, où le
+  contrôle de dimension ne voit rien. La collection enregistre le modèle et la
+  révision qui l'ont indexée, et refuse les autres (ADR-0010).
+- **Un seuil de pertinence n'est pas une barrière** : il écarte le hors-sujet,
+  pas le malveillant. Un chunk conçu pour ressembler aux questions courantes le
+  franchit par construction (SEC-08).
 - **Tracing = risque de fuite** : l'observabilité peut elle-même exfiltrer des
   données sensibles si on log tout brut.
 - **Éthique/périmètre** : toutes les attaques ne sont menées que sur la

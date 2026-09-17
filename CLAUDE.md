@@ -54,7 +54,7 @@ d'usage de sécurité de premier plan**, pas comme une couche annexe.
 | API | **FastAPI** + Uvicorn | async, streaming SSE, OpenAPI auto |
 | LLM (dev) | **Ollama** + `llama3.1` | local, gratuit, derrière `LLMProvider` |
 | LLM (prod) | OpenAI / Azure | swappable sans toucher au métier |
-| Embeddings | **sentence-transformers `all-MiniLM-L6-v2`** | **384 dimensions**, local |
+| Embeddings | **`ibm-granite/granite-embedding-107m-multilingual`** | **384 dimensions**, local, multilingue, révision épinglée (ADR-0010) |
 | Base vectorielle | **Qdrant** (Docker) | derrière `VectorStore` |
 | Agents | **LangGraph** | RAG exposé comme outil |
 | Observabilité | **Langfuse** + `structlog` | tracing, tokens, coûts |
@@ -65,10 +65,15 @@ d'usage de sécurité de premier plan**, pas comme une couche annexe.
 | Déploiement | **Render / Railway** | free tier |
 | Scans sécu | bandit · pip-audit · gitleaks · Dependabot | en CI |
 
-> ⚠️ **Cohérence dimension embeddings ↔ collection Qdrant** : la collection est
+> ⚠️ **Cohérence modèle d'embeddings ↔ collection Qdrant** : la collection est
 > créée pour 384 dim. Changer de modèle d'embeddings impose de recréer la
-> collection et de ré-ingérer. La dimension est un paramètre de config, jamais
-> une valeur en dur.
+> collection et de ré-ingérer — **même à dimension égale** : la collection
+> enregistre le modèle et sa révision, et refuse tout autre (ADR-0010). La
+> dimension est un paramètre de config, jamais une valeur en dur.
+>
+> ⚠️ **Seuil de pertinence** : `RETRIEVAL_MIN_SCORE` est calibré pour ce modèle
+> précis. En changer impose de le recalibrer ;
+> `tests/integration/test_retrieval_relevance.py` échoue sinon, scores à l'appui.
 
 ---
 
@@ -85,7 +90,7 @@ Client ─HTTP─▶ API FastAPI ─▶ [Sécurité: validation/guardrails/authz
                                           │ (RAG comme outil + outils)
                                           ▼
         Ingestion ─▶ VectorStore(Qdrant) ◀── Retrieval
-        Embedder(MiniLM) alimente ingestion ET retrieval
+        Embedder (granite multilingue) alimente ingestion ET retrieval
         Observabilité (tracing/tokens/coûts) enveloppe tout
 ```
 
@@ -109,10 +114,10 @@ Client ─HTTP─▶ API FastAPI ─▶ [Sécurité: validation/guardrails/authz
 | `config.py` | Settings via env (pydantic-settings) | contenir des secrets en dur |
 | `api/` | Routes FastAPI, schémas pydantic, auth | logique métier |
 | `llm/` | Interface `LLMProvider` + impls | connaître le RAG |
-| `embeddings/` | Interface `Embedder` + impl MiniLM | parler à Qdrant |
+| `embeddings/` | Interface `Embedder` + impl sentence-transformers | parler à Qdrant |
 | `vectorstore/` | Interface `VectorStore` + impl Qdrant | fabriquer des embeddings |
 | `ingestion/` | load → clean → chunk → embed → index | répondre aux requêtes |
-| `retrieval/` | recherche vectorielle top-k (+ rerank plus tard) | appeler le LLM |
+| `retrieval/` | recherche vectorielle top-k + seuil de pertinence (+ rerank plus tard) | appeler le LLM |
 | `generation/` | prompt templates + appel LLM | faire la recherche |
 | `agents/` | agent LangGraph + outils | bypass des contrôles sécu |
 | `security/` | validation, guardrails, authz, sanitation | logique métier |

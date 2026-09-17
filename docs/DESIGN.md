@@ -61,7 +61,7 @@ Schéma et détails : `CLAUDE.md` §4, specs par module `docs/BUILD_PLAN.md`.
 |---|---|---|
 | Découplage | Interfaces `LLMProvider` / `VectorStore` / `Embedder` | un peu plus de code, mais liberté de swap et testabilité (inversion de dépendance) |
 | LLM en dev | Ollama local | gratuit et privé, au prix d'une qualité moindre que les API — sans impact grâce à l'abstraction |
-| Embeddings | `all-MiniLM-L6-v2` (384 dim) | léger/rapide ; qualité supérieure possible (mpnet 768) évaluée en M6 |
+| Embeddings | `granite-embedding-107m-multilingual` (384 dim) | multilingue et entraîné pour la recherche, choisi sur mesure contre trois autres modèles (ADR-0010) ; seuil de pertinence à marge étroite, à recalibrer quand le corpus grandira |
 | Base vectorielle | Qdrant conteneurisé | vraie base "prod" plutôt qu'un embarqué ; nécessite Docker |
 | Orchestration | Docker Compose, pas K8s | plus simple, suffisant en solo ; K8s documenté mais non déployé (ADR-0001) |
 | Sécurité | dans le code, pas dans le prompt | plus d'effort d'ingénierie, mais barrières fiables (le prompt est contournable) |

@@ -15,6 +15,7 @@ from qdrant_client import AsyncQdrantClient, models
 
 from aisecassist.vectorstore.base import (
     CollectionDimensionMismatchError,
+    CollectionEmbeddingModelMismatchError,
     VectorStoreError,
 )
 from aisecassist.vectorstore.qdrant import QdrantVectorStore
@@ -23,6 +24,7 @@ pytestmark = pytest.mark.anyio
 
 _COLLECTION = "test_collection"
 _DIM = 4
+_MODELE = "modele-a@rev-1"
 
 _VEC_A = [1.0, 0.0, 0.0, 0.0]
 _VEC_B = [0.0, 1.0, 0.0, 0.0]
@@ -32,7 +34,9 @@ _VEC_B = [0.0, 1.0, 0.0, 0.0]
 async def store() -> AsyncIterator[QdrantVectorStore]:
     client = AsyncQdrantClient(location=":memory:")
     try:
-        yield QdrantVectorStore(url="", collection=_COLLECTION, client=client)
+        yield QdrantVectorStore(
+            url="", collection=_COLLECTION, embedding_model=_MODELE, client=client
+        )
     finally:
         await client.close()
 
@@ -174,7 +178,9 @@ async def test_un_point_sans_provenance_est_ecarte_sans_faire_echouer_la_recherc
     """
     client = AsyncQdrantClient(location=":memory:")
     try:
-        store = QdrantVectorStore(url="", collection=_COLLECTION, client=client)
+        store = QdrantVectorStore(
+            url="", collection=_COLLECTION, embedding_model=_MODELE, client=client
+        )
         await store.ensure_collection(_DIM)
         await store.add(["extrait valide"], [_VEC_A], ["source.md"])
         await client.upsert(
@@ -189,3 +195,127 @@ async def test_un_point_sans_provenance_est_ecarte_sans_faire_echouer_la_recherc
 
     finally:
         await client.close()
+
+
+# --- Modele d'embeddings inscrit dans la collection (ADR-0010) ---------------
+
+
+@pytest.fixture
+async def client() -> AsyncIterator[AsyncQdrantClient]:
+    client = AsyncQdrantClient(location=":memory:")
+    try:
+        yield client
+    finally:
+        await client.close()
+
+
+def _store(client: AsyncQdrantClient, modele: str = _MODELE) -> QdrantVectorStore:
+    return QdrantVectorStore(url="", collection=_COLLECTION, embedding_model=modele, client=client)
+
+
+async def test_une_nouvelle_instance_du_meme_modele_reprend_la_collection(
+    client: AsyncQdrantClient,
+) -> None:
+    """Le modele est relu dans la collection, pas deduit de l'instance qui l'a creee.
+
+    C'est le cas du redemarrage de l'API : une nouvelle instance, une collection
+    existante.
+    """
+    createur = _store(client)
+    await createur.ensure_collection(_DIM)
+    await createur.add(["extrait"], [_VEC_A], ["owasp.md"])
+
+    assert len(await _store(client).search(_VEC_A, k=1)) == 1
+
+
+async def test_lingestion_refuse_une_collection_indexee_par_un_autre_modele(
+    client: AsyncQdrantClient,
+) -> None:
+    """A dimension egale, le controle de dimension ne voit rien : c'est ce test qui compte.
+
+    Le message nomme les deux modeles, pour que la panne se diagnostique sans
+    lire le code.
+    """
+    await _store(client, "modele-a@rev-1").ensure_collection(_DIM)
+
+    with pytest.raises(CollectionEmbeddingModelMismatchError) as excinfo:
+        await _store(client, "modele-b@rev-1").ensure_collection(_DIM)
+
+    assert "modele-a@rev-1" in str(excinfo.value)
+    assert "modele-b@rev-1" in str(excinfo.value)
+
+
+async def test_une_autre_revision_du_meme_modele_est_refusee(client: AsyncQdrantClient) -> None:
+    """Deux revisions des memes poids ne produisent pas des vecteurs identiques."""
+    await _store(client, "modele-a@rev-1").ensure_collection(_DIM)
+
+    with pytest.raises(CollectionEmbeddingModelMismatchError):
+        await _store(client, "modele-a@rev-2").ensure_collection(_DIM)
+
+
+async def test_la_recherche_refuse_une_collection_indexee_par_un_autre_modele(
+    client: AsyncQdrantClient,
+) -> None:
+    """Le chemin de l'API : il ne passe jamais par `ensure_collection`.
+
+    Sans ce controle a la lecture, la requete repondrait normalement, avec des
+    extraits choisis au hasard.
+    """
+    createur = _store(client, "modele-a@rev-1")
+    await createur.ensure_collection(_DIM)
+    await createur.add(["extrait"], [_VEC_A], ["owasp.md"])
+
+    with pytest.raises(CollectionEmbeddingModelMismatchError):
+        await _store(client, "modele-b@rev-1").search(_VEC_A, k=1)
+
+
+async def test_lecriture_refuse_une_collection_indexee_par_un_autre_modele(
+    client: AsyncQdrantClient,
+) -> None:
+    """Ecrire est pire que lire : le melange des deux espaces resterait en base."""
+    await _store(client, "modele-a@rev-1").ensure_collection(_DIM)
+    intrus = _store(client, "modele-b@rev-1")
+
+    with pytest.raises(CollectionEmbeddingModelMismatchError):
+        await intrus.add(["extrait"], [_VEC_A], ["owasp.md"])
+
+    assert await _store(client, "modele-a@rev-1").search(_VEC_A, k=10) == []
+
+
+async def test_une_collection_qui_ne_declare_aucun_modele_est_refusee(
+    client: AsyncQdrantClient,
+) -> None:
+    """Le cas des collections creees avant l'ADR-0010.
+
+    Rien ne dit avec quel modele leurs vecteurs ont ete produits. Les supposer
+    compatibles reviendrait exactement au defaut que ce controle corrige.
+    """
+    await client.create_collection(
+        _COLLECTION,
+        vectors_config=models.VectorParams(size=_DIM, distance=models.Distance.COSINE),
+    )
+
+    with pytest.raises(CollectionEmbeddingModelMismatchError):
+        await _store(client).search(_VEC_A, k=1)
+    with pytest.raises(CollectionEmbeddingModelMismatchError):
+        await _store(client).ensure_collection(_DIM)
+
+
+async def test_une_collection_recreee_est_acceptee_sans_redemarrage(
+    client: AsyncQdrantClient,
+) -> None:
+    """Un refus n'est pas memorise : seule une verification reussie l'est.
+
+    La remediation — recreer la collection et re-ingerer — doit suffire. Une API
+    qui continuerait de refuser jusqu'au redemarrage transformerait une
+    correction en panne prolongee.
+    """
+    await _store(client, "ancien-modele@rev-1").ensure_collection(_DIM)
+    store = _store(client)
+    with pytest.raises(CollectionEmbeddingModelMismatchError):
+        await store.search(_VEC_A, k=1)
+
+    await client.delete_collection(_COLLECTION)
+    await _store(client).ensure_collection(_DIM)
+
+    assert await store.search(_VEC_A, k=1) == []

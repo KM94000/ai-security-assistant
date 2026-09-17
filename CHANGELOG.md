@@ -1,5 +1,61 @@
 # Changelog
 
+## [Non publie] - Dette M2 : un retrieval capable de dire « je n'ai rien »
+### Ajoute
+- **Seuil de pertinence** `RETRIEVAL_MIN_SCORE` (0,64), applique extrait par
+  extrait par `RetrievalService`. Une liste vide signifie que le corpus ne couvre
+  pas la question : `/query` et `/query/stream` renvoient alors le refus explicite,
+  sans appeler le modele. Auparavant la recherche renvoyait toujours ses k
+  extraits, meme pour une recette de cuisine, et ce refus ne se declenchait jamais.
+- **Garde-fou d'espace vectoriel** : le store inscrit `modele@revision` dans les
+  metadonnees de la collection qu'il cree. Lire ou ecrire avec un autre modele,
+  ou dans une collection qui n'en declare aucun, leve
+  `CollectionEmbeddingModelMismatchError` (503 generique cote API). Le controle de
+  dimension ne voyait rien : ancien et nouveau modele ont tous deux 384 dimensions.
+- **Revision du modele epinglee** (`EMBEDDING_MODEL_REVISION`) et transmise au
+  chargement : le seuil est calibre sur ces poids precis.
+- `tests/integration/test_retrieval_relevance.py` : 47 questions, en jeux de
+  calibrage et de controle, rejouees en CI contre le vrai Qdrant. En cas d'echec,
+  le message affiche chaque score et le seuil que donnerait la regle.
+- ADR-0010, qui remplace l'ADR-0006.
+
+### Modifie
+- **Modele d'embeddings** : `all-MiniLM-L6-v2` remplace par
+  `ibm-granite/granite-embedding-107m-multilingual` (384 dimensions, 512 tokens,
+  ~220 Mo, Apache 2.0). Decoupage inchange (800/120).
+- Le test d'integration hors corpus exige desormais le refus exact, sans source.
+  Il n'a plus besoin d'Ollama et tourne en CI.
+- Le test d'ingestion accepte OWASP ou MITRE ATLAS en tete pour l'injection
+  indirecte : les deux referentiels la traitent, et exiger l'un devant l'autre
+  figeait un ordre entre deux passages pertinents.
+
+### Mesure
+- 47 questions sur le vrai corpus, quatre modeles (details dans l'ADR-0010) :
+
+  | Modele | Seuil possible | MRR@5 |
+  |---|---|---|
+  | all-MiniLM-L6-v2 | non, chevauchement | 0,63 |
+  | paraphrase-multilingual-MiniLM-L12-v2 | oui | 0,53 |
+  | multilingual-e5-small | non, scores tasses | 0,70 |
+  | **granite-embedding-107m-multilingual** | **oui, 0 erreur au controle** | **0,77** |
+
+- Traduire la question en anglais avec le modele actuel, meme a la main :
+  chevauchement et MRR 0,56. Ecarte.
+- Les tests ont ete verifies par mutation : avec l'ancien modele, ou avec le seuil
+  desactive, ils echouent.
+
+### Limites
+- **Marge etroite** : 0,652 pour la pire question couverte, 0,613 pour la
+  meilleure hors sujet. Des erreurs sont attendues sur des formulations inedites.
+- Le seuil ecarte le hors-sujet, pas le non couvert : 5 questions de securite
+  absentes du corpus sur 10 le franchissent. Ce n'est pas non plus un controle de
+  securite.
+
+### Migration
+- Les collections existantes sont refusees au premier acces. Les recreer :
+  `curl -X DELETE http://localhost:6333/collections/aisec_docs`, puis
+  `python -m aisecassist.ingestion.pipeline data/corpus`.
+
 ## [Non publie] - M2, ticket 15 : guardrail de sortie (SEC-02)
 ### Ajoute
 - Module `security/output_guardrail.py` : redaction des secrets a forme

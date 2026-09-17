@@ -1,6 +1,7 @@
 """Test d'acceptation de M1 : la chaine complete, du HTTP a la reponse sourcee.
 
-Deselectionne par defaut. Exige Qdrant et Ollama demarres :
+Deselectionne par defaut. Exige Qdrant demarre, et Ollama pour les tests
+marques `llm` :
 
     docker compose -f docker/docker-compose.yml up -d qdrant
     ollama serve
@@ -24,11 +25,12 @@ from qdrant_client import AsyncQdrantClient
 
 from aisecassist.config import settings
 from aisecassist.embeddings.sentence_transformer import SentenceTransformerEmbedder
+from aisecassist.generation.prompt import REFUS_SANS_CONTEXTE
 from aisecassist.ingestion.pipeline import IngestionPipeline
 from aisecassist.main import app
 from aisecassist.vectorstore.qdrant import QdrantVectorStore
 
-pytestmark = [pytest.mark.integration, pytest.mark.llm]
+pytestmark = pytest.mark.integration
 
 _CORPUS = Path(__file__).resolve().parents[2] / "data" / "corpus"
 
@@ -67,8 +69,11 @@ def corpus_indexe(collection_isolee: str) -> Iterator[str]:
         embedder = SentenceTransformerEmbedder(
             settings.embedding_model,
             settings.embedding_dimension,
+            revision=settings.embedding_model_revision,
         )
-        async with QdrantVectorStore(settings.qdrant_url, collection_isolee) as store:
+        async with QdrantVectorStore(
+            settings.qdrant_url, collection_isolee, embedding_model=settings.embedding_model_id
+        ) as store:
             pipeline = IngestionPipeline(
                 embedder,
                 store,
@@ -83,6 +88,7 @@ def corpus_indexe(collection_isolee: str) -> Iterator[str]:
     yield collection_isolee
 
 
+@pytest.mark.llm
 def test_une_question_reelle_recoit_une_reponse_sourcee(corpus_indexe: str) -> None:
     """Le livrable de M1, verifie de bout en bout.
 
@@ -105,14 +111,21 @@ def test_une_question_reelle_recoit_une_reponse_sourcee(corpus_indexe: str) -> N
     assert any(source["source"] == "owasp-llm-top10.md" for source in corps["sources"])
 
 
-def test_une_question_hors_corpus_donne_un_refus_plutot_quune_invention(
+def test_une_question_hors_corpus_donne_un_refus_sans_appeler_le_modele(
     corpus_indexe: str,
 ) -> None:
-    """La parade a la desinformation : refuser plutot que supposer (LLM09).
+    """La parade a la desinformation : refuser plutot que supposer (LLM09, ADR-0010).
 
-    Le corpus ne parle que de securite de l'IA. Une question sans rapport doit
-    ramener soit un refus, soit une reponse qui reste sourcee — jamais une
-    affirmation inventee presentee comme un fait.
+    Avant le seuil de pertinence, ce test ne pouvait exiger qu'une reponse « non
+    vide » : la recherche renvoyait toujours ses k extraits, meme pour une
+    recette de cuisine, et le modele etait interroge avec un contexte hors sujet.
+    Il exige desormais le refus explicite, sans aucune source.
+
+    Il n'est pas marque `llm` et tourne donc en CI, ou aucun Ollama n'ecoute :
+    c'est voulu. Sans extrait retenu, le modele n'est pas appele. Si le seuil
+    cessait de filtrer, l'appel partirait vers un serveur absent, la route
+    repondrait 503, et le test echouerait bruyamment plutot que de passer par
+    hasard.
     """
     with TestClient(app) as client:
         reponse = client.post(
@@ -122,7 +135,5 @@ def test_une_question_hors_corpus_donne_un_refus_plutot_quune_invention(
 
     assert reponse.status_code == 200
     corps = reponse.json()
-    assert corps["answer"].strip() != ""
-    # Toute affirmation doit rester rattachee au corpus reellement consulte.
-    for source in corps["sources"]:
-        assert source["source"].endswith(".md")
+    assert corps["answer"] == REFUS_SANS_CONTEXTE
+    assert corps["sources"] == []

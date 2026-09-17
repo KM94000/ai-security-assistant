@@ -27,7 +27,7 @@ de commande OS ? ». Neuf actions, quatre points de sécurité (🔐).
 |---|---|---|---|
 | 1 | Réception + validation (forme, authz) + `request_id` | API | 🔐 SEC-11, SEC-14 |
 | 2 | Question → vecteur (384 dim) | Embedder | — |
-| 3 | Recherche top-k des chunks | VectorStore → Qdrant | — |
+| 3 | Recherche top-k des chunks, puis seuil de pertinence : rien au-dessus → refus, sans appel au LLM | VectorStore → Qdrant, Retrieval | — |
 | 4 | Sanitation du contexte récupéré | Security | 🔐 SEC-01b, SEC-04 |
 | 5 | Assemblage du prompt `[système][contexte][question]` séparés | Generation | 🔐 SEC-01 |
 | 6 | Génération token par token | LLMProvider | — |
@@ -111,7 +111,7 @@ Chaque composant sert un objectif produit explicite.
   OpenAI/Azure (prod).
 - `VectorStore` : `ensure_collection(dimension)`, `add(texts, vectors, sources)`,
   `search(query_vector, k) -> list[SearchResult]`. Impl : Qdrant.
-- `Embedder` : `embed(texts) -> vectors`, `dimension`. Impl : MiniLM (384).
+- `Embedder` : `embed(texts) -> vectors`, `dimension`. Impl : granite-embedding-107m-multilingual (384, ADR-0010).
 - `SearchResult` : dataclass `{text, source, score}`.
 
 ### Validation d'entrée — trois niveaux (défense en profondeur)

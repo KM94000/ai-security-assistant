@@ -1,6 +1,7 @@
 """Test d'integration : ingestion du vrai corpus dans le vrai Qdrant.
 
-Deselectionne par defaut. Exige le conteneur demarre et telecharge MiniLM :
+Deselectionne par defaut. Exige le conteneur demarre et telecharge le modele
+d'embeddings :
 
     docker compose -f docker/docker-compose.yml up -d qdrant
     pytest -m integration
@@ -51,9 +52,12 @@ async def test_le_corpus_de_reference_sindexe_et_se_retrouve(collection_jetable:
     embedder = SentenceTransformerEmbedder(
         settings.embedding_model,
         settings.embedding_dimension,
+        revision=settings.embedding_model_revision,
     )
 
-    async with QdrantVectorStore(settings.qdrant_url, collection_jetable) as store:
+    async with QdrantVectorStore(
+        settings.qdrant_url, collection_jetable, embedding_model=settings.embedding_model_id
+    ) as store:
         pipeline = IngestionPipeline(
             embedder,
             store,
@@ -77,7 +81,12 @@ async def test_le_corpus_de_reference_sindexe_et_se_retrouve(collection_jetable:
         resultats = await store.search(question[0], k=3)
 
     assert len(resultats) == 3
-    # La question porte sur l'injection indirecte : OWASP doit ressortir, pas
-    # le cadre de gestion des risques du NIST.
-    assert resultats[0].source == "owasp-llm-top10.md"
+    # La question porte sur l'injection indirecte, que traitent OWASP (LLM01) et
+    # MITRE ATLAS (« Techniques particulierement pertinentes pour un RAG »). Le
+    # cadre du NIST, qui n'en parle pas, ne doit pas ressortir en tete. Exiger
+    # OWASP devant ATLAS figerait un ordre entre deux passages pertinents : c'est
+    # ce qu'a revele le changement de modele (ADR-0010), sans que la recherche
+    # soit moins bonne.
+    assert resultats[0].source in {"owasp-llm-top10.md", "mitre-atlas.md"}
+    assert "owasp-llm-top10.md" in {resultat.source for resultat in resultats}
     assert all(resultat.text.strip() for resultat in resultats)

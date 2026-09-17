@@ -55,3 +55,30 @@ def test_les_valeurs_hors_bornes_sont_refusees(champ: str, valeur: int) -> None:
     """`RETRIEVAL_TOP_K=0` demarrait sans un mot, puis chaque requete finissait en 503."""
     with pytest.raises(ValidationError):
         Settings(**{champ: valeur})
+
+
+@pytest.mark.parametrize("seuil", [-1.01, 1.01, 64])
+def test_un_seuil_de_pertinence_hors_de_lechelle_cosinus_est_refuse(seuil: float) -> None:
+    """`RETRIEVAL_MIN_SCORE=64` — un pourcentage au lieu d'une similarite — refuserait tout.
+
+    Chaque question recevrait « le corpus ne contient rien », sans la moindre
+    erreur : la panne ressemblerait a un corpus vide.
+    """
+    with pytest.raises(ValidationError):
+        Settings(retrieval_min_score=seuil)
+
+
+def test_une_revision_de_modele_vide_est_refusee() -> None:
+    """Une revision vide reviendrait a suivre la derniere version publiee du modele.
+
+    Le seuil de pertinence est calibre sur des poids precis (ADR-0010).
+    """
+    with pytest.raises(ValidationError):
+        Settings(embedding_model_revision="")
+
+
+def test_lidentifiant_du_modele_inclut_la_revision() -> None:
+    """C'est cet identifiant que la collection enregistre et verifie."""
+    settings = Settings(embedding_model="org/modele", embedding_model_revision="abc123")
+
+    assert settings.embedding_model_id == "org/modele@abc123"

@@ -39,15 +39,17 @@ class _CountingLoader:
     def __init__(self, dimension: int) -> None:
         self.dimension = dimension
         self.calls = 0
+        self.revisions: list[str | None] = []
 
-    def __call__(self, model_name: str) -> SentenceTransformerLike:
+    def __call__(self, model_name: str, revision: str | None) -> SentenceTransformerLike:
         self.calls += 1
+        self.revisions.append(revision)
         return _FakeModel(self.dimension)
 
 
 def _embedder(expected: int = 384, actual: int | None = None) -> SentenceTransformerEmbedder:
     loader = _CountingLoader(actual if actual is not None else expected)
-    return SentenceTransformerEmbedder("modele-de-test", expected, loader=loader)
+    return SentenceTransformerEmbedder("modele-de-test", expected, revision="rev", loader=loader)
 
 
 def test_dimension_reflete_la_configuration() -> None:
@@ -58,7 +60,7 @@ def test_le_modele_nest_pas_charge_a_la_construction() -> None:
     """Construire un embedder ne doit declencher aucun telechargement."""
     loader = _CountingLoader(384)
 
-    SentenceTransformerEmbedder("modele-de-test", 384, loader=loader)
+    SentenceTransformerEmbedder("modele-de-test", 384, revision="rev", loader=loader)
 
     assert loader.calls == 0
 
@@ -74,7 +76,7 @@ async def test_embed_renvoie_un_vecteur_par_texte_dans_lordre() -> None:
 
 async def test_embed_sur_une_liste_vide_ne_charge_pas_le_modele() -> None:
     loader = _CountingLoader(384)
-    embedder = SentenceTransformerEmbedder("modele-de-test", 384, loader=loader)
+    embedder = SentenceTransformerEmbedder("modele-de-test", 384, revision="rev", loader=loader)
 
     assert await embedder.embed([]) == []
     assert loader.calls == 0
@@ -82,7 +84,7 @@ async def test_embed_sur_une_liste_vide_ne_charge_pas_le_modele() -> None:
 
 async def test_le_modele_nest_charge_quune_seule_fois() -> None:
     loader = _CountingLoader(384)
-    embedder = SentenceTransformerEmbedder("modele-de-test", 384, loader=loader)
+    embedder = SentenceTransformerEmbedder("modele-de-test", 384, revision="rev", loader=loader)
 
     await embedder.embed(["premier appel"])
     await embedder.embed(["second appel"])
@@ -112,10 +114,29 @@ async def test_un_modele_de_mauvaise_dimension_est_refuse() -> None:
 async def test_un_chargement_impossible_devient_une_erreur_metier() -> None:
     """L'appelant ne doit pas avoir a connaitre les exceptions de torch."""
 
-    def failing_loader(model_name: str) -> SentenceTransformerLike:
+    def failing_loader(model_name: str, revision: str | None) -> SentenceTransformerLike:
         raise OSError("modele introuvable")
 
-    embedder = SentenceTransformerEmbedder("modele-absent", 384, loader=failing_loader)
+    embedder = SentenceTransformerEmbedder(
+        "modele-absent", 384, revision="rev", loader=failing_loader
+    )
 
     with pytest.raises(EmbedderError):
         await embedder.embed(["question"])
+
+
+async def test_la_revision_epinglee_est_transmise_au_chargement() -> None:
+    """Sans cette transmission, l'epinglage ne serait qu'une valeur de configuration.
+
+    Le seuil de pertinence est calibre sur des poids precis (ADR-0010). Si la
+    revision se perdait entre la configuration et le chargement, le modele
+    suivrait silencieusement les mises a jour du depot, et le seuil deriverait.
+    """
+    loader = _CountingLoader(384)
+    embedder = SentenceTransformerEmbedder(
+        "modele-de-test", 384, revision="d6cffd33", loader=loader
+    )
+
+    await embedder.embed(["question"])
+
+    assert loader.revisions == ["d6cffd33"]
