@@ -69,6 +69,43 @@ Schéma et détails : `CLAUDE.md` §4, specs par module `docs/BUILD_PLAN.md`.
 
 Les décisions structurantes sont tracées comme **ADR** dans `docs/adr/`.
 
+### Stratégie RAG : ce qu'on retient, ce qu'on écarte
+
+Le RAG mis en place est **volontairement simple** — découpage à fenêtre
+glissante, embeddings denses, recherche des k plus proches — augmenté de deux
+contrôles qui, eux, ne sont pas optionnels : un **seuil de pertinence**, sans
+lequel la recherche renvoie toujours k extraits et ne sait jamais dire « le
+corpus ne couvre pas cette question », et un **garde-fou d'espace vectoriel**,
+qui refuse une collection indexée par un autre modèle (ADR-0010).
+
+Les stratégies avancées ne sont pas adoptées parce qu'elles sont réputées
+efficaces, mais quand elles battent cette base **sur notre banc de mesure** :
+47 questions, en jeux de calibrage et de contrôle, avec deux critères — écarter
+le hors-sujet, et placer le bon passage dans les extraits envoyés au modèle
+(MRR@5). C'est ce banc qui a écarté deux modèles d'embeddings pourtant
+plausibles (ADR-0010), et il tourne en CI.
+
+| Stratégie | Décision | Raison |
+|---|---|---|
+| **Agentic RAG** | **M3** | Le RAG devient un outil que l'agent choisit d'appeler. Le seuil en était le prérequis : un outil incapable de répondre « rien » fait boucler l'agent sur des extraits hors sujet. |
+| **Découpage sémantique** | Après M3 | Nos extraits coupent en plein mot. Le corpus est structuré en sections : découper dessus est déterministe, sans modèle ni dépendance. |
+| **Reranking** (cross-encoder) | M6 | Seule réponse sérieuse à l'angle mort mesuré : 5 questions de sécurité hors corpus sur 10 franchissent le seuil. Coût à mesurer : une étape et de la latence par requête. |
+| **Recherche hybride** (dense + BM25) | M6 | Les embeddings denses sont mauvais sur les identifiants exacts, or le produit doit répondre sur des CVE nommées. Qdrant gère les vecteurs creux nativement. |
+| **RAG hiérarchique** | M6, après mesure | Chercher petit, transmettre le passage parent. Vise le même défaut que le découpage sémantique : on tranchera sur les chiffres, pas sur les deux. |
+| **Graphes de connaissance** | M7, optionnel | MITRE ATLAS *est* un graphe de tactiques et de techniques, mais c'est une base de plus à héberger. À rouvrir si les questions de mise en relation deviennent centrales. |
+| **Self-reflective RAG** | M3/M4, sous plafond | L'agent juge sa propre récupération et relance. Utile, à condition d'un plafond d'itérations : sans lui, la boucle devient un déni de service auto-infligé (SEC-06). |
+| **Expansion de requête / multi-requête** | Dans l'agent, pas avant | Hors agent, cela place un appel au modèle **avant** la recherche : latence, scores non reproductibles alors que le seuil suppose l'inverse, et une question piégée pourrait orienter la recherche. Dans l'agent, c'est un appel d'outil tracé, aux arguments validés en dur. |
+| **Contextual retrieval** | Écarté à ce stade | Faire résumer chaque extrait par un modèle **à l'ingestion** revient à laisser un document hostile rédiger sa propre description pour se faire récupérer plus souvent : un amplificateur d'empoisonnement (SEC-04, SEC-08), en plus du coût. À rouvrir en M5, avec des garde-fous. |
+| **Late chunking** | Non applicable | Exige un modèle à très long contexte ; le nôtre plafonne à 512 tokens. |
+| **Embeddings fine-tunés** | Non | Demanderait un jeu annoté du domaine, que nous n'avons pas. |
+
+Deux constantes dans ce tri. D'abord, **une stratégie qui insère le modèle avant
+ou pendant la récupération ajoute une surface d'injection** : elle n'est
+acceptée que dans l'agent, où l'appel est tracé et ses arguments validés par du
+code. Ensuite, **à bénéfice comparable, on préfère le déterministe** : un
+découpage structurel coûte moins cher et se teste mieux qu'un enrichissement
+généré.
+
 ## 6. Sécurité — approche
 
 Le produit est un outil de sécurité : sa crédibilité dépend de sa propre

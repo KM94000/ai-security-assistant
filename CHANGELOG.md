@@ -18,6 +18,11 @@
   calibrage et de controle, rejouees en CI contre le vrai Qdrant. En cas d'echec,
   le message affiche chaque score et le seuil que donnerait la regle.
 - ADR-0010, qui remplace l'ADR-0006.
+- `docs/DESIGN.md` : section « Strategie RAG », qui argumente le tri des
+  strategies avancees — retenues (agentic RAG en M3, puis decoupage semantique,
+  reranking, recherche hybride) et ecartees (contextual retrieval, expansion de
+  requete hors agent, late chunking, embeddings fine-tunes) — avec le critere de
+  decision : battre la base sur le banc de 47 questions.
 
 ### Modifie
 - **Modele d'embeddings** : `all-MiniLM-L6-v2` remplace par
