@@ -5,9 +5,11 @@ partir de sources de reference (OWASP, MITRE ATT&CK/ATLAS, CVE, NIST) —
 construite comme un **produit de production** et **durcie contre les attaques
 propres aux LLM** (sa propre surface d'attaque est traitee comme un cas d'usage).
 
-> Statut : 🚧 M1 — le RAG repond. Ingestion d'un corpus, recherche vectorielle
-> et `POST /query` avec reponse sourcee. La couverture securite est suivie
-> ligne a ligne dans [`docs/SECURITY.md`](docs/SECURITY.md), colonne Statut.
+> Statut : 🚧 M3 — l'agent arrive. Le RAG repond deja : ingestion d'un corpus,
+> recherche vectorielle avec seuil de pertinence, `POST /query` sourcee et
+> streamee. En cours : un agent qui decide d'appeler le RAG comme un outil. La
+> couverture securite est suivie ligne a ligne dans
+> [`docs/SECURITY.md`](docs/SECURITY.md), colonne Statut.
 
 ## ⚡ Essayer
 

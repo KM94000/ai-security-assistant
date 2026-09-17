@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from typing import Any
 
 import httpx
 import pytest
 
-from aisecassist.llm.base import LLMError
+from aisecassist.llm.base import ChatMessage, LLMError, ToolCall, ToolSpec
 from aisecassist.llm.ollama import OllamaProvider
 
 pytestmark = pytest.mark.anyio
@@ -125,3 +126,131 @@ async def test_stream_refuse_une_ligne_non_json() -> None:
 
     with pytest.raises(LLMError):
         [fragment async for fragment in provider.stream("question")]
+
+
+# --- Appel d'outils (ticket 19, ADR-0011) ------------------------------------
+
+_SPEC = ToolSpec(
+    name="rechercher_corpus",
+    description="Recherche dans le corpus.",
+    parameters={"type": "object", "properties": {"question": {"type": "string"}}},
+)
+_QUESTION = [ChatMessage(role="user", content="Comment mitiger une XSS ?")]
+
+
+def _reponse_chat(**message: object) -> httpx.Response:
+    return httpx.Response(200, json={"message": {"role": "assistant", **message}, "done": True})
+
+
+async def test_chat_renvoie_le_texte_du_modele() -> None:
+    provider = _provider(lambda _: _reponse_chat(content="  Utilise un WAF.  "))
+
+    reponse = await provider.chat(_QUESTION, [_SPEC])
+
+    assert reponse.text == "Utilise un WAF."
+    assert reponse.tool_calls == ()
+
+
+async def test_chat_renvoie_les_appels_doutils_demandes() -> None:
+    provider = _provider(
+        lambda _: _reponse_chat(
+            content="",
+            tool_calls=[
+                {"function": {"name": "rechercher_corpus", "arguments": {"question": "xss"}}}
+            ],
+        )
+    )
+
+    reponse = await provider.chat(_QUESTION, [_SPEC])
+
+    assert reponse.tool_calls == (
+        ToolCall(name="rechercher_corpus", arguments={"question": "xss"}),
+    )
+
+
+async def test_chat_presente_les_outils_et_fige_la_temperature() -> None:
+    """Le contrat avec Ollama fait partie du comportement teste.
+
+    Sans `tools` dans la charge utile, le modele ne peut pas appeler d'outil ; et
+    sans temperature nulle, il decrit parfois l'appel en texte au lieu de
+    l'emettre (mesure a l'appui, ADR-0011).
+    """
+    recu: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recu.append(json.loads(request.content))
+        return _reponse_chat(content="ok")
+
+    await _provider(handler).chat(_QUESTION, [_SPEC])
+
+    charge = recu[0]
+    assert charge["options"]["temperature"] == 0.0
+    assert charge["stream"] is False
+    assert charge["tools"][0]["function"]["name"] == "rechercher_corpus"
+    assert charge["tools"][0]["type"] == "function"
+
+
+async def test_chat_transmet_la_demande_et_le_resultat_doutil() -> None:
+    """L'historique doit contenir la demande, puis le resultat qui lui repond."""
+    recu: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recu.append(json.loads(request.content))
+        return _reponse_chat(content="fini")
+
+    appel = ToolCall(name="rechercher_corpus", arguments={"question": "xss"})
+    historique = [
+        *_QUESTION,
+        ChatMessage(role="assistant", content="", tool_calls=(appel,)),
+        ChatMessage(role="tool", content="extrait", tool_name="rechercher_corpus"),
+    ]
+
+    await _provider(handler).chat(historique, [_SPEC])
+
+    messages = recu[0]["messages"]
+    assert messages[1]["tool_calls"][0]["function"]["name"] == "rechercher_corpus"
+    assert messages[2] == {
+        "role": "tool",
+        "content": "extrait",
+        "tool_name": "rechercher_corpus",
+    }
+
+
+async def test_chat_ecarte_un_appel_inexploitable_sans_faire_echouer_la_requete() -> None:
+    """Un appel malforme est une erreur du modele, pas une panne du serveur.
+
+    L'agent sait traiter l'absence d'appel — il repondra de lui-meme ou
+    redemandera — la ou une exception ferait tomber la requete entiere.
+    """
+    provider = _provider(
+        lambda _: _reponse_chat(
+            content="",
+            tool_calls=[
+                {"function": {"arguments": {"question": "sans nom"}}},
+                "pas un objet",
+                {"function": {"name": "rechercher_corpus", "arguments": '{"question": "chaine"}'}},
+            ],
+        )
+    )
+
+    reponse = await provider.chat(_QUESTION, [_SPEC])
+
+    # Seul l'appel exploitable subsiste, avec ses arguments decodes.
+    assert reponse.tool_calls == (
+        ToolCall(name="rechercher_corpus", arguments={"question": "chaine"}),
+    )
+
+
+async def test_chat_sur_une_reponse_sans_message_leve_une_erreur_metier() -> None:
+    provider = _provider(lambda _: httpx.Response(200, json={"done": True}))
+
+    with pytest.raises(LLMError):
+        await provider.chat(_QUESTION, [_SPEC])
+
+
+async def test_chat_sur_une_panne_reseau_leve_une_erreur_metier() -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connexion refusee")
+
+    with pytest.raises(LLMError):
+        await _provider(handler).chat(_QUESTION, [_SPEC])

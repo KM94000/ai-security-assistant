@@ -1,5 +1,58 @@
 # Changelog
 
+## [Non publie] - M3, ticket 19 : agent LangGraph, le RAG expose comme outil
+### Ajoute
+- **Module `agents/`** : un graphe LangGraph a trois noeuds — decider, executer,
+  couper sur plafond — et le service qui le pilote. Le modele choisit d'appeler
+  un outil ou de repondre ; le code impose tout le reste.
+- **Outil `rechercher_corpus`** : le RAG expose a l'agent, en lecture seule. Ses
+  arguments sont valides par un schema pydantic `extra="forbid"`, et les extraits
+  rendus sont assainis avant d'entrer dans la conversation.
+- **`ToolCallingProvider`** : interface distincte de `LLMProvider` pour l'appel
+  d'outils, implementee par `OllamaProvider` via `/api/chat` (ADR-0011). Le
+  fournisseur traduit et ne decide rien : il n'execute aucun outil et ne valide
+  aucun argument.
+- Modules partages `security/limits.py` (plafonds d'entree et de sortie) et
+  `security/prompt_sanitation.py` (neutralisation des marqueurs de bloc), pour que
+  `/query` et l'agent appliquent la meme implementation plutot que deux copies.
+- `AGENT_MAX_ITERATIONS`, par defaut 3.
+- ADR-0011.
+
+### Securite
+- **SEC-05 et SEC-06 passent a partiel.** Quatre barrieres, toutes cote code :
+  liste blanche d'outils, plafond d'iterations, plafond d'appels par tour,
+  validation des arguments. Un appel refuse est journalise.
+- La reponse de l'agent passe par le meme guardrail de sortie et le meme plafond
+  de longueur que `/query` : une seconde porte ne doit pas devenir une porte
+  derobee.
+- Les arguments d'appel sont traces par leurs cles, jamais par leurs valeurs :
+  une question peut contenir des donnees sensibles (SEC-12). Le tracage complet
+  viendra avec Langfuse en M4, dans un systeme prevu pour.
+
+### Mesure
+- Un tour d'agent sur CPU : **31 s** pour decider d'appeler l'outil, **86 s**
+  pour rediger la reponse a partir de l'extrait. Un aller-retour coute donc
+  environ deux minutes, contre une vingtaine de secondes pour `/query`. La
+  latence varie fortement d'un appel a l'autre — de 32 s a 237 s pour un meme
+  appel de decision. Le delai de 120 s calibre pour `/query` sera a revoir au
+  ticket 21, avec l'endpoint.
+- **Temperature nulle sur le chemin outille.** A la temperature par defaut
+  d'Ollama (0,8), `llama3.1` a decrit une fois l'appel d'outil en JSON dans son
+  texte au lieu d'emprunter le canal prevu — le code ne l'interprete pas, et
+  l'agent a donc repondu sans source. Sur six essais ulterieurs, l'appel etait
+  structure a chaque fois : c'est de la variance, pas un defaut de formulation.
+  La temperature est mise a zero pour rendre la decision reproductible.
+- Sans outils presentes au second tour, le modele repond de memoire : 1 855
+  caracteres en 539 s, sans source. Avec les outils presentes : 395 caracteres
+  fondes sur l'extrait. Les outils restent donc presentes a chaque tour.
+
+### Dependance
+- `langgraph` ajoute **22 paquets transitifs**, dont `langchain-core` et
+  `langsmith` : c'est la plus lourde du projet en nombre de paquets, donc en
+  surface de chaine d'approvisionnement (LLM03). Cout assume et documente
+  (ADR-0011) ; le tracage LangSmith reste inactif tant qu'aucune variable
+  d'environnement ne l'active.
+
 ## [Non publie] - Dette M2 : un retrieval capable de dire « je n'ai rien »
 ### Ajoute
 - **Seuil de pertinence** `RETRIEVAL_MIN_SCORE` (0,64), applique extrait par

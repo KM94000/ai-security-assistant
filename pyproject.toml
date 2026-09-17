@@ -34,6 +34,13 @@ dependencies = [
     # Base vectorielle (ADR-0005). Le mode ":memory:" du client embarque le
     # vrai moteur Qdrant : les tests unitaires n'ont besoin d'aucun conteneur.
     "qdrant-client>=1.19",
+    # Orchestration de l'agent (ADR-0001, ADR-0011). Tire 22 paquets
+    # transitifs, dont langchain-core et langsmith : c'est la dependance la plus
+    # lourde du projet en nombre de paquets, donc en surface de chaine
+    # d'approvisionnement (LLM03). Le cout est assume et documente dans
+    # l'ADR-0011 ; en contrepartie, le graphe est le seul module a en dependre,
+    # et les appels au modele passent par notre propre interface.
+    "langgraph>=1.2",
 ]
 
 [project.optional-dependencies]

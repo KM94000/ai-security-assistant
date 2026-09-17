@@ -8,18 +8,11 @@ from dataclasses import dataclass
 
 from aisecassist.generation.prompt import REFUS_SANS_CONTEXTE, build_prompt
 from aisecassist.llm.base import LLMError, LLMProvider
+from aisecassist.security.limits import MARQUEUR_TRONCATURE, plafonner
 from aisecassist.security.output_guardrail import StreamRedactor, redact
 from aisecassist.vectorstore.base import SearchResult
 
 logger = logging.getLogger(__name__)
-
-MARQUEUR_TRONCATURE = "\n\n[reponse tronquee : plafond de longueur atteint]"
-"""Marqueur ajoute quand le plafond est atteint.
-
-Tronquer en silence laisserait l'utilisateur devant une reponse coupee au
-milieu d'une phrase, sans savoir si le modele a fini, si la connexion a lache,
-ou si le serveur a decide d'arreter. Le dire coute une ligne.
-"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,10 +130,10 @@ class GenerationService:
 
     def _plafonner(self, reponse: str) -> str:
         """Applique le meme plafond a une reponse complete."""
-        if len(reponse) <= self._max_answer_chars:
-            return reponse
-        self._signaler_troncature()
-        return reponse[: self._max_answer_chars] + MARQUEUR_TRONCATURE
+        texte, tronque = plafonner(reponse, self._max_answer_chars)
+        if tronque:
+            self._signaler_troncature()
+        return texte
 
     def _signaler_fuite(self, categories: Sequence[str]) -> None:
         """Journalise un declenchement du guardrail, sans jamais la valeur.

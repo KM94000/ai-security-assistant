@@ -20,7 +20,7 @@ Dockerfile + compose, tests. Reste optionnel : déploiement Render.
 
 ---
 
-## M1 — RAG walking skeleton
+## M1 — RAG walking skeleton ✅ (fait)
 
 **Objectif :** une question traverse toute la chaîne RAG sur un petit corpus.
 **Livrable :** `POST /query` renvoie une réponse fondée sur des documents réels.
@@ -52,7 +52,7 @@ vient en M5, la structure du prompt est posée maintenant.
 
 ---
 
-## M2 — Qualité & robustesse (premier point présentable)
+## M2 — Qualité & robustesse (premier point présentable) ✅ (fait)
 
 **Objectif :** transformer le skeleton en service robuste et testé.
 **Livrable :** API RAG async, streamée, avec tests d'intégration verts en CI.
