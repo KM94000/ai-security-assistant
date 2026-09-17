@@ -19,7 +19,10 @@ from qdrant_client import AsyncQdrantClient
 
 from aisecassist.config import settings
 from aisecassist.embeddings.sentence_transformer import SentenceTransformerEmbedder
-from aisecassist.vectorstore.base import CollectionDimensionMismatchError
+from aisecassist.vectorstore.base import (
+    CollectionDimensionMismatchError,
+    CollectionEmbeddingModelMismatchError,
+)
 from aisecassist.vectorstore.qdrant import QdrantVectorStore
 
 pytestmark = [pytest.mark.anyio, pytest.mark.integration]
@@ -41,7 +44,9 @@ async def collection_jetable() -> AsyncIterator[str]:
 
 async def test_ensure_collection_cree_puis_detecte_un_conflit(collection_jetable: str) -> None:
     """Le garde-fou de dimension doit tenir face au vrai moteur, pas seulement en memoire."""
-    async with QdrantVectorStore(settings.qdrant_url, collection_jetable) as store:
+    async with QdrantVectorStore(
+        settings.qdrant_url, collection_jetable, embedding_model=settings.embedding_model_id
+    ) as store:
         await store.ensure_collection(settings.embedding_dimension)
         await store.ensure_collection(settings.embedding_dimension)  # idempotent
 
@@ -50,7 +55,7 @@ async def test_ensure_collection_cree_puis_detecte_un_conflit(collection_jetable
 
 
 async def test_chaine_complete_vectoriser_indexer_retrouver(collection_jetable: str) -> None:
-    """Bout en bout : MiniLM vectorise, Qdrant indexe, la recherche retrouve par le sens.
+    """Bout en bout : le modele vectorise, Qdrant indexe, la recherche retrouve par le sens.
 
     C'est le substrat du RAG. Si ce test passe, il ne manque plus que
     l'assemblage du prompt et l'appel au modele pour repondre a une question.
@@ -58,6 +63,7 @@ async def test_chaine_complete_vectoriser_indexer_retrouver(collection_jetable: 
     embedder = SentenceTransformerEmbedder(
         settings.embedding_model,
         settings.embedding_dimension,
+        revision=settings.embedding_model_revision,
     )
     textes = [
         "Une injection de prompt indirecte passe par un document ingere par le systeme.",
@@ -65,7 +71,9 @@ async def test_chaine_complete_vectoriser_indexer_retrouver(collection_jetable: 
     ]
     sources = ["owasp-llm-top10.md", "recettes.md"]
 
-    async with QdrantVectorStore(settings.qdrant_url, collection_jetable) as store:
+    async with QdrantVectorStore(
+        settings.qdrant_url, collection_jetable, embedding_model=settings.embedding_model_id
+    ) as store:
         await store.ensure_collection(embedder.dimension)
         await store.add(textes, await embedder.embed(textes), sources)
 
@@ -76,3 +84,30 @@ async def test_chaine_complete_vectoriser_indexer_retrouver(collection_jetable: 
     # c'est la difference entre un index qui fonctionne et un index qui repond.
     assert len(results) == 1
     assert results[0].source == "owasp-llm-top10.md"
+
+
+async def test_le_modele_inscrit_dans_la_collection_survit_au_vrai_serveur(
+    collection_jetable: str,
+) -> None:
+    """Le garde-fou repose sur les metadonnees de collection : encore faut-il que Qdrant les garde.
+
+    Les tests unitaires tournent sur le moteur embarque en memoire. Rien ne
+    garantit qu'un serveur d'une autre version conserve ces metadonnees ; s'il
+    les perdait, toute collection serait refusee comme « sans modele declare ».
+    """
+    async with QdrantVectorStore(
+        settings.qdrant_url, collection_jetable, embedding_model="modele-a@rev-1"
+    ) as createur:
+        await createur.ensure_collection(4)
+        await createur.add(["extrait"], [[1.0, 0.0, 0.0, 0.0]], ["owasp.md"])
+
+    async with QdrantVectorStore(
+        settings.qdrant_url, collection_jetable, embedding_model="modele-a@rev-1"
+    ) as meme_modele:
+        assert len(await meme_modele.search([1.0, 0.0, 0.0, 0.0], k=1)) == 1
+
+    async with QdrantVectorStore(
+        settings.qdrant_url, collection_jetable, embedding_model="modele-b@rev-1"
+    ) as autre_modele:
+        with pytest.raises(CollectionEmbeddingModelMismatchError):
+            await autre_modele.search([1.0, 0.0, 0.0, 0.0], k=1)

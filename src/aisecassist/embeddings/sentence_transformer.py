@@ -30,11 +30,12 @@ class SentenceTransformerLike(Protocol):
     def encode(self, sentences: list[str], /) -> Any: ...
 
 
-ModelLoader = Callable[[str], SentenceTransformerLike]
+ModelLoader = Callable[[str, str | None], SentenceTransformerLike]
+"""Charge un modele a partir de son nom et de la revision de ses poids."""
 
 
-def load_sentence_transformer(model_name: str) -> SentenceTransformerLike:
-    """Charge le modele depuis sentence-transformers.
+def load_sentence_transformer(model_name: str, revision: str | None) -> SentenceTransformerLike:
+    """Charge le modele depuis sentence-transformers, a la revision demandee.
 
     L'import est differe : importer torch coute plusieurs secondes et plusieurs
     centaines de Mo de memoire. Le faire au chargement du module penaliserait le
@@ -42,7 +43,7 @@ def load_sentence_transformer(model_name: str) -> SentenceTransformerLike:
     """
     from sentence_transformers import SentenceTransformer
 
-    model: SentenceTransformerLike = SentenceTransformer(model_name)
+    model: SentenceTransformerLike = SentenceTransformer(model_name, revision=revision)
     return model
 
 
@@ -58,9 +59,14 @@ class SentenceTransformerEmbedder(Embedder):
         model_name: str,
         expected_dimension: int,
         *,
+        revision: str | None,
         loader: ModelLoader | None = None,
     ) -> None:
         self._model_name = model_name
+        # Obligatoire, meme a None : oublier d'epingler doit etre un choix visible
+        # a l'appel, pas un defaut. Un seuil de pertinence calibre sur des poids
+        # precis ne vaut plus rien si le depot publie une nouvelle revision.
+        self._revision = revision
         self._expected_dimension = expected_dimension
         self._loader = loader or load_sentence_transformer
         self._model: SentenceTransformerLike | None = None
@@ -98,7 +104,7 @@ class SentenceTransformerEmbedder(Embedder):
             return self._model
 
         try:
-            model = self._loader(self._model_name)
+            model = self._loader(self._model_name, self._revision)
         except Exception as exc:  # noqa: BLE001 - retypage volontaire en erreur metier
             raise EmbedderError(f"Chargement du modele {self._model_name} echoue : {exc}") from exc
 

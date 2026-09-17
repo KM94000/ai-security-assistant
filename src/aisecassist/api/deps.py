@@ -37,8 +37,13 @@ def build_services() -> Services:
     embedder = SentenceTransformerEmbedder(
         settings.embedding_model,
         settings.embedding_dimension,
+        revision=settings.embedding_model_revision,
     )
-    store = QdrantVectorStore(settings.qdrant_url, settings.qdrant_collection)
+    store = QdrantVectorStore(
+        settings.qdrant_url,
+        settings.qdrant_collection,
+        embedding_model=settings.embedding_model_id,
+    )
     llm = OllamaProvider(
         base_url=settings.ollama_base_url,
         model=settings.ollama_model,
@@ -46,7 +51,12 @@ def build_services() -> Services:
     )
 
     return Services(
-        retrieval=RetrievalService(embedder, store, settings.retrieval_top_k),
+        retrieval=RetrievalService(
+            embedder,
+            store,
+            settings.retrieval_top_k,
+            min_score=settings.retrieval_min_score,
+        ),
         generation=GenerationService(llm, max_answer_chars=settings.max_answer_chars),
         store=store,
         llm=llm,

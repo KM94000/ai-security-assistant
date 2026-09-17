@@ -1,7 +1,7 @@
-"""Test d'integration : charge reellement all-MiniLM-L6-v2.
+"""Test d'integration : charge reellement le modele d'embeddings configure.
 
 Deselectionne par defaut (marqueur `integration`) car il telecharge environ
-90 Mo au premier passage. Le lancer avec :
+220 Mo au premier passage, a la revision epinglee. Le lancer avec :
 
     pytest -m integration
 
@@ -22,6 +22,7 @@ async def test_le_modele_configure_produit_bien_la_dimension_attendue() -> None:
     embedder = SentenceTransformerEmbedder(
         settings.embedding_model,
         settings.embedding_dimension,
+        revision=settings.embedding_model_revision,
     )
 
     vectors = await embedder.embed(["injection de prompt indirecte"])
@@ -39,6 +40,7 @@ async def test_deux_textes_proches_sont_plus_proches_que_deux_textes_eloignes() 
     embedder = SentenceTransformerEmbedder(
         settings.embedding_model,
         settings.embedding_dimension,
+        revision=settings.embedding_model_revision,
     )
 
     vectors = await embedder.embed(

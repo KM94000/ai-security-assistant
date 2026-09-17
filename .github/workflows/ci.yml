@@ -107,7 +107,7 @@ jobs:
       - name: Installer les dependances
         run: pip install -e ".[dev]"
       - name: Cache du modele d'embeddings
-        # MiniLM pese ~90 Mo. Sans cache, chaque execution le retelecharge
+        # Le modele pese ~220 Mo. Sans cache, chaque execution le retelecharge
         # depuis Hugging Face, ce qui allonge le job et depend de la
         # disponibilite d'un service tiers.
         uses: actions/cache@v4

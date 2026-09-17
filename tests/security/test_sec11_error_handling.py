@@ -25,12 +25,12 @@ from aisecassist.vectorstore.base import VectorStoreError
 from tests.doubles import (
     ExplodingLLM,
     ExplodingVectorStore,
-    FakeEmbedder,
     FakeLLM,
     FakeVectorStore,
     StreamingLLM,
     extrait,
     make_generation,
+    make_retrieval,
 )
 
 # Marqueurs qui trahiraient une fuite d'information interne dans une reponse.
@@ -91,7 +91,7 @@ def _assert_sans_fuite(corps: str) -> None:
 )
 def test_une_entree_malformee_donne_un_422_sans_fuite(payload: dict[str, object]) -> None:
     services = _services(
-        RetrievalService(FakeEmbedder(), FakeVectorStore(), default_k=5),
+        make_retrieval(FakeVectorStore()),
         make_generation(FakeLLM()),
     )
 
@@ -103,7 +103,7 @@ def test_une_entree_malformee_donne_un_422_sans_fuite(payload: dict[str, object]
 
 def test_un_corps_qui_nest_pas_du_json_donne_un_422() -> None:
     services = _services(
-        RetrievalService(FakeEmbedder(), FakeVectorStore(), default_k=5),
+        make_retrieval(FakeVectorStore()),
         make_generation(FakeLLM()),
     )
 
@@ -123,7 +123,7 @@ def test_un_corps_qui_nest_pas_du_json_donne_un_422() -> None:
 def test_une_panne_du_modele_donne_un_503_sans_detail_interne() -> None:
     """Le message d'erreur d'Ollama ne doit pas atteindre le client."""
     services = _services(
-        RetrievalService(FakeEmbedder(), FakeVectorStore([extrait("contenu")]), default_k=5),
+        make_retrieval(FakeVectorStore([extrait("contenu")])),
         make_generation(ExplodingLLM(LLMError("connexion refusee sur http://localhost:11434"))),
     )
 
@@ -136,10 +136,8 @@ def test_une_panne_du_modele_donne_un_503_sans_detail_interne() -> None:
 
 def test_une_panne_de_la_base_vectorielle_donne_un_503_sans_detail_interne() -> None:
     services = _services(
-        RetrievalService(
-            FakeEmbedder(),
+        make_retrieval(
             ExplodingVectorStore(VectorStoreError("qdrant injoignable sur http://localhost:6333")),
-            default_k=5,
         ),
         make_generation(FakeLLM()),
     )
@@ -163,7 +161,7 @@ def test_une_charge_xss_dans_la_question_ne_ressort_pas_telle_quelle() -> None:
     """
     charge = "<script>alert('xss')</script>"
     services = _services(
-        RetrievalService(FakeEmbedder(), FakeVectorStore([extrait("contenu")]), default_k=5),
+        make_retrieval(FakeVectorStore([extrait("contenu")])),
         make_generation(FakeLLM("reponse neutre")),
     )
 
@@ -177,7 +175,7 @@ def test_une_charge_xss_dans_la_question_ne_ressort_pas_telle_quelle() -> None:
 def test_une_question_de_longueur_maximale_est_acceptee() -> None:
     """La borne doit etre inclusive : rejeter la valeur limite serait un faux positif."""
     services = _services(
-        RetrievalService(FakeEmbedder(), FakeVectorStore([extrait("contenu")]), default_k=5),
+        make_retrieval(FakeVectorStore([extrait("contenu")])),
         make_generation(FakeLLM()),
     )
 
@@ -191,10 +189,8 @@ def test_une_question_de_longueur_maximale_est_acceptee() -> None:
 
 def test_une_question_valide_renvoie_une_reponse_sourcee() -> None:
     services = _services(
-        RetrievalService(
-            FakeEmbedder(),
+        make_retrieval(
             FakeVectorStore([extrait("Valider les entrees.", source="owasp.md", score=0.87)]),
-            default_k=5,
         ),
         make_generation(FakeLLM("Il faut valider les entrees.")),
     )
@@ -210,7 +206,7 @@ def test_une_question_valide_renvoie_une_reponse_sourcee() -> None:
 def test_sans_extrait_pertinent_la_reponse_est_un_refus_explicite() -> None:
     """Mieux vaut refuser que supposer : c'est la parade a la desinformation (LLM09)."""
     services = _services(
-        RetrievalService(FakeEmbedder(), FakeVectorStore([]), default_k=5),
+        make_retrieval(FakeVectorStore([])),
         make_generation(FakeLLM()),
     )
 
@@ -243,10 +239,8 @@ def _evenements(corps: str) -> list[tuple[str, dict[str, Any]]]:
 
 def test_le_flux_emet_les_sources_puis_les_fragments_puis_la_fin() -> None:
     services = _services(
-        RetrievalService(
-            FakeEmbedder(),
+        make_retrieval(
             FakeVectorStore([extrait("Valider.", source="owasp.md", score=0.87)]),
-            default_k=5,
         ),
         make_generation(StreamingLLM(["Il ", "faut ", "valider."])),
     )
@@ -274,7 +268,7 @@ def test_le_flux_emet_les_sources_puis_les_fragments_puis_la_fin() -> None:
 def test_une_panne_pendant_le_flux_devient_un_evenement_erreur_sans_fuite() -> None:
     """Le cas que les gestionnaires d'exception ne peuvent plus attraper."""
     services = _services(
-        RetrievalService(FakeEmbedder(), FakeVectorStore([extrait("contenu")]), default_k=5),
+        make_retrieval(FakeVectorStore([extrait("contenu")])),
         make_generation(ExplodingLLM(LLMError("connexion refusee sur http://localhost:11434"))),
     )
 
@@ -297,7 +291,7 @@ def test_une_panne_pendant_le_flux_devient_un_evenement_erreur_sans_fuite() -> N
 def test_une_entree_malformee_sur_le_flux_donne_un_422_avant_ouverture() -> None:
     """La validation precede l'ouverture du flux : un 4xx reste possible."""
     services = _services(
-        RetrievalService(FakeEmbedder(), FakeVectorStore(), default_k=5),
+        make_retrieval(FakeVectorStore()),
         make_generation(FakeLLM()),
     )
 
@@ -313,10 +307,8 @@ def test_une_panne_de_recherche_sur_le_flux_donne_un_503_avant_ouverture() -> No
     Tant que rien n'est emis, une panne se traduit encore par un 503 propre.
     """
     services = _services(
-        RetrievalService(
-            FakeEmbedder(),
+        make_retrieval(
             ExplodingVectorStore(VectorStoreError("qdrant injoignable sur http://localhost:6333")),
-            default_k=5,
         ),
         make_generation(FakeLLM()),
     )

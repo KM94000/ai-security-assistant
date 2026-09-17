@@ -118,8 +118,13 @@ def build_default_pipeline() -> tuple[IngestionPipeline, QdrantVectorStore]:
     embedder = SentenceTransformerEmbedder(
         settings.embedding_model,
         settings.embedding_dimension,
+        revision=settings.embedding_model_revision,
     )
-    store = QdrantVectorStore(settings.qdrant_url, settings.qdrant_collection)
+    store = QdrantVectorStore(
+        settings.qdrant_url,
+        settings.qdrant_collection,
+        embedding_model=settings.embedding_model_id,
+    )
     pipeline = IngestionPipeline(
         embedder,
         store,

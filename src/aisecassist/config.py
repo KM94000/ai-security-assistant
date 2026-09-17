@@ -26,11 +26,22 @@ class Settings(BaseSettings):
     # est attendue — c'est precisement pourquoi c'est un parametre.
     llm_timeout_s: float = Field(default=120.0, gt=0)
 
-    # --- Embeddings (ADR-0006 : all-MiniLM-L6-v2) ---
-    embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    # --- Embeddings (ADR-0010 : granite-embedding-107m-multilingual) ---
+    # Multilingue et entraîné pour la recherche : le corpus et les questions sont
+    # en français, et un modèle anglais y écrasait l'écart entre pertinent et
+    # hors sujet (mesures dans l'ADR-0010).
+    embedding_model: str = "ibm-granite/granite-embedding-107m-multilingual"
+    # Révision épinglée des poids. Le seuil de pertinence est calibré sur ces
+    # poids précis : une mise à jour silencieuse du dépôt déplacerait les scores
+    # sans que rien ne le signale. C'est aussi une protection de la chaîne
+    # d'approvisionnement (LLM03).
+    embedding_model_revision: str = Field(
+        default="d6cffd338414d6a1c1f5decfad5fec62eebc90d5", min_length=1
+    )
     # La dimension est un paramètre, jamais une valeur en dur : elle doit rester
     # cohérente avec la collection Qdrant, créée pour cette même dimension.
-    # Changer de modèle impose de recréer la collection et de ré-ingérer.
+    # Changer de modèle impose de recréer la collection et de ré-ingérer — même à
+    # dimension égale, ce que la collection vérifie (ADR-0010).
     embedding_dimension: int = Field(default=384, gt=0)
 
     # --- Base vectorielle (ADR-0005 : Qdrant) ---
@@ -46,6 +57,15 @@ class Settings(BaseSettings):
 
     # --- Recherche ---
     retrieval_top_k: int = Field(default=5, gt=0)
+    # Similarité cosinus minimale pour qu'un extrait soit retenu (ADR-0010). Sans
+    # elle, la recherche renvoie toujours k extraits, même hors sujet, et le refus
+    # « le corpus ne contient rien » ne se déclenche jamais.
+    #
+    # Valeur mesurée, pas choisie : elle ne vaut que pour le modèle et la révision
+    # ci-dessus. Changer de modèle impose de la recalibrer —
+    # `tests/integration/test_retrieval_relevance.py` échoue sinon, en affichant
+    # les scores nécessaires.
+    retrieval_min_score: float = Field(default=0.64, ge=-1.0, le=1.0)
 
     # --- Generation ---
     # Plafond de longueur d'une reponse (SEC-10). En streaming surtout : une
@@ -55,6 +75,16 @@ class Settings(BaseSettings):
     max_answer_chars: int = Field(default=8_000, gt=0)
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+
+    @property
+    def embedding_model_id(self) -> str:
+        """Identifie l'espace vectoriel : le modèle et la révision exacte de ses poids.
+
+        C'est cette valeur que la collection enregistre et vérifie. Deux révisions
+        d'un même modèle ne produisent pas des vecteurs identiques ; les mélanger
+        dans une collection dégraderait la recherche sans erreur visible.
+        """
+        return f"{self.embedding_model}@{self.embedding_model_revision}"
 
     @model_validator(mode="after")
     def _verifier_la_coherence_du_decoupage(self) -> "Settings":
