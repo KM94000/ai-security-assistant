@@ -71,7 +71,7 @@ interne (SEC-11).
 
 ---
 
-## M3 — Agent
+## M3 — Agent ✅ (fait)
 
 **Objectif :** un agent qui décide et utilise des outils, dont le RAG.
 **Livrable :** `POST /agent` répond à une question complexe via un raisonnement
@@ -81,8 +81,15 @@ multi-outils.
 |---|---|---|---|
 | 19 ✅ | Agent LangGraph, RAG exposé comme outil | l'agent choisit d'appeler le RAG quand pertinent | SEC-06 |
 | 20 ✅ | Outil `consulter_cve` (base du NIST) — ADR-0012 | l'agent sélectionne le bon outil ; args validés | SEC-05, SEC-06 |
-| 21 | Endpoint `POST /agent` | question complexe → réponse multi-étapes tracée | SEC-01, SEC-06 |
-| 22 | (option) exposer un outil en MCP | conforme au protocole | SEC-06 |
+| 21 ✅ | Endpoint `POST /agent` + budget de temps de l'agent | question complexe → réponse multi-étapes tracée | SEC-01, SEC-06 |
+| 22 ⏸ | (option) exposer un outil en MCP | conforme au protocole | SEC-06 |
+
+> Le livrable du jalon est atteint : `POST /agent` répond en croisant deux
+> outils, et la réponse expose ses sources et son nombre d'étapes. Le ticket
+> 22 est marqué optionnel dans ce plan depuis le début ; il est **reporté**
+> plutôt qu'abandonné — exposer un outil en MCP a plus de valeur une fois
+> l'observabilité en place (M4), qui donnera de quoi mesurer ce qu'un client
+> externe déclenche réellement.
 
 **Sécurité intégrée M3 (critique) :** chaque outil valide ses arguments **côté
 code** (SEC-05). Principe de **moindre privilège** : un outil ne peut faire que

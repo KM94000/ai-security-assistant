@@ -1,5 +1,36 @@
 # Changelog
 
+## [Non publie] - M3, ticket 21 : `POST /agent`, et le budget de temps de l'agent
+### Ajoute
+- **Route `POST /agent`** : le livrable de M3. Meme schema d'entree que `/query`
+  — l'agent n'est pas une seconde porte aux regles plus souples — et une reponse
+  qui expose `answer`, `sources` et `iterations`.
+- **`iterations` dans la reponse** : le nombre de tours d'outils reellement
+  effectues. Zero signifie que le modele a repondu de lui-meme, sans rien
+  consulter. C'est ce qui rend le cheminement verifiable par le lecteur.
+- **`AGENT_TIMEOUT_S`**, budget de temps total d'une execution, 300 s par defaut.
+- Un **504** distinct du 503 : le budget epuise n'est pas une panne, et
+  reformuler y change quelque chose la ou reessayer ne sert a rien.
+- Section « A quoi ca ressemble vraiment » dans le README : deux echanges
+  reellement captures, dont un dont les limites sont commentees.
+
+### Securite
+- **Le budget de temps est le seul plafond que les autres ne remplacent pas.**
+  Le plafond d'iterations et celui d'appels par tour comptent des etapes ; ils
+  ne voient rien d'un appel unique qui ne revient jamais (SEC-10).
+- Le plafond de longueur de question s'applique aussi **dans le service**, et
+  plus seulement dans le schema HTTP : le service est une porte a part entiere.
+- Le 504 ne revele ni la duree du budget ni aucun detail interne — un test
+  SEC-11 le verifie, la duree partant dans les logs.
+- `extra="forbid"` refuse un `max_iterations` envoye par le client : c'est
+  precisement le parametre qu'on tenterait de pousser pour relever un plafond.
+
+### Modifie
+- Les fixtures d'integration partagees (collection jetable, corpus ingere)
+  passent dans `tests/integration/conftest.py` : deux fichiers s'en servent.
+- `AgentService` exige desormais un `timeout_s` explicite, comme ses autres
+  plafonds.
+
 ## [Non publie] - M3, ticket 20 : consultation d'une CVE, premier outil qui sort de la machine
 ### Ajoute
 - **Outil `consulter_cve`** : interroge la base publique du NIST (NVD) pour un

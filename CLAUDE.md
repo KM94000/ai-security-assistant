@@ -193,4 +193,5 @@ docker compose -f docker/docker-compose.yml up -d qdrant
 
 Suivre `docs/BUILD_PLAN.md` milestone par milestone, ticket par ticket, dans
 l'ordre. Ne pas démarrer un milestone tant que le précédent n'a pas atteint son
-"Livrable". M0, M1 et M2 sont faits. Milestone courant : **M3** (agent).
+"Livrable". M0, M1, M2 et M3 sont faits — le ticket 22 (MCP), marqué
+optionnel, est reporté après M4. Milestone courant : **M4** (observabilité).

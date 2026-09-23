@@ -31,6 +31,7 @@ def _agent(
         outils or (FakeTool(),),
         max_iterations=max_iterations,
         max_answer_chars=max_answer_chars,
+        timeout_s=5.0,
     )
 
 
@@ -149,6 +150,7 @@ async def test_un_agent_sans_outil_est_refuse_a_la_construction() -> None:
             [],
             max_iterations=3,
             max_answer_chars=8_000,
+            timeout_s=5.0,
         )
 
 

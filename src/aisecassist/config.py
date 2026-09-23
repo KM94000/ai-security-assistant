@@ -72,6 +72,17 @@ class Settings(BaseSettings):
     # Sans plafond, un agent qui ne trouve rien relance indéfiniment : c'est un
     # déni de service qu'on s'inflige, et la facture d'inférence avec.
     agent_max_iterations: int = Field(default=3, gt=0)
+    # Budget de temps TOTAL d'une execution d'agent (ticket 21). Le plafond
+    # d'iterations borne le nombre d'etapes, pas leur duree : un seul appel qui
+    # traine le rend inoperant. C'est donc le seul plafond qui tienne quoi que
+    # fasse le modele.
+    #
+    # 300 s est calibre pour un modele local sur CPU, ou un tour coute environ
+    # 30 s de decision et 90 s de redaction — avec des pointes mesurees a 240 s
+    # pour un seul appel. C'est une valeur de developpement, pas une cible : un
+    # fournisseur heberge divise ces durees par un facteur proche de 50, et la
+    # valeur attendue en production se compte en dizaines de secondes.
+    agent_timeout_s: float = Field(default=300.0, gt=0)
 
     # --- Outil CVE / NVD (ticket 20, ADR-0012) ---
     # Base de l'API publique du NIST. C'est une valeur de configuration, jamais

@@ -15,77 +15,13 @@ verifient chaque etage ; celui-ci verifie qu'ils sont branches ensemble.
 
 from __future__ import annotations
 
-import uuid
-from collections.abc import Iterator
-from pathlib import Path
-
 import pytest
 from fastapi.testclient import TestClient
-from qdrant_client import AsyncQdrantClient
 
-from aisecassist.config import settings
-from aisecassist.embeddings.sentence_transformer import SentenceTransformerEmbedder
 from aisecassist.generation.prompt import REFUS_SANS_CONTEXTE
-from aisecassist.ingestion.pipeline import IngestionPipeline
 from aisecassist.main import app
-from aisecassist.vectorstore.qdrant import QdrantVectorStore
 
 pytestmark = pytest.mark.integration
-
-_CORPUS = Path(__file__).resolve().parents[2] / "data" / "corpus"
-
-
-@pytest.fixture
-def collection_isolee(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
-    """Fait pointer l'application sur une collection jetable.
-
-    Sans cela, le test dependrait de l'etat de la collection de travail — donc
-    de ce qui a ete ingere avant lui, ce qui est exactement le genre de couplage
-    qui rend un test vert un jour et rouge le lendemain.
-    """
-    nom = f"test_api_{uuid.uuid4().hex[:8]}"
-    monkeypatch.setattr(settings, "qdrant_collection", nom)
-    yield nom
-
-    import anyio
-
-    async def _supprimer() -> None:
-        client = AsyncQdrantClient(url=settings.qdrant_url)
-        try:
-            if await client.collection_exists(nom):
-                await client.delete_collection(nom)
-        finally:
-            await client.close()
-
-    anyio.run(_supprimer)
-
-
-@pytest.fixture
-def corpus_indexe(collection_isolee: str) -> Iterator[str]:
-    """Ingere le corpus de reference dans la collection jetable."""
-    import anyio
-
-    async def _ingerer() -> None:
-        embedder = SentenceTransformerEmbedder(
-            settings.embedding_model,
-            settings.embedding_dimension,
-            revision=settings.embedding_model_revision,
-        )
-        async with QdrantVectorStore(
-            settings.qdrant_url, collection_isolee, embedding_model=settings.embedding_model_id
-        ) as store:
-            pipeline = IngestionPipeline(
-                embedder,
-                store,
-                chunk_size=settings.chunk_size,
-                chunk_overlap=settings.chunk_overlap,
-                max_document_bytes=settings.max_document_bytes,
-            )
-            rapport = await pipeline.ingest_directory(_CORPUS)
-            assert rapport.chunks_indexed > 0
-
-    anyio.run(_ingerer)
-    yield collection_isolee
 
 
 @pytest.mark.llm
