@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import pytest
 
-from aisecassist.generation.service import MARQUEUR_TRONCATURE
+from aisecassist.security.limits import MARQUEUR_TRONCATURE
 from tests.doubles import FakeLLM, StreamingLLM, extrait, make_generation
 
 pytestmark = pytest.mark.anyio

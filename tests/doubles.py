@@ -8,11 +8,19 @@ laisser passer des tests qui ne testent plus rien.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
+from typing import Any
 
+from aisecassist.agents.tools import Tool, ToolResult
 from aisecassist.embeddings.base import Embedder
 from aisecassist.generation.service import GenerationService
-from aisecassist.llm.base import LLMProvider
+from aisecassist.llm.base import (
+    ChatMessage,
+    ChatReply,
+    LLMProvider,
+    ToolCallingProvider,
+    ToolSpec,
+)
 from aisecassist.retrieval.service import RetrievalService
 from aisecassist.vectorstore.base import SearchResult, VectorStore
 
@@ -166,3 +174,61 @@ def make_retrieval(
         default_k,
         min_score=min_score,
     )
+
+
+class ScriptedChatLLM(ToolCallingProvider):
+    """Rejoue une suite de reponses fixee, et conserve ce qu'on lui a envoye.
+
+    Quand le script est epuise, la derniere reponse est rejouee. C'est ce qui
+    permet de tester un plafond : un modele qui redemande le meme outil sans
+    fin est exactement le cas que le plafond doit couper.
+    """
+
+    def __init__(self, replies: Sequence[ChatReply]) -> None:
+        if not replies:
+            raise ValueError("Au moins une reponse est requise.")
+        self._replies = list(replies)
+        self.conversations: list[list[ChatMessage]] = []
+        self.outils_presentes: list[ToolSpec] = []
+
+    @property
+    def appels(self) -> int:
+        """Nombre de fois ou le modele a ete interroge."""
+        return len(self.conversations)
+
+    async def chat(
+        self,
+        messages: Sequence[ChatMessage],
+        tools: Sequence[ToolSpec],
+    ) -> ChatReply:
+        self.conversations.append(list(messages))
+        self.outils_presentes = list(tools)
+        indice = min(len(self.conversations) - 1, len(self._replies) - 1)
+        return self._replies[indice]
+
+
+class FakeTool(Tool):
+    """Outil de test : renvoie une observation fixee et enregistre ses appels."""
+
+    def __init__(
+        self,
+        name: str = "rechercher_corpus",
+        observation: str = "extrait de test",
+        sources: Sequence[str] = ("owasp.md",),
+    ) -> None:
+        self._name = name
+        self._observation = observation
+        self._sources = tuple(sources)
+        self.arguments_recus: list[Mapping[str, Any]] = []
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name=self._name,
+            description="Outil de test.",
+            parameters={"type": "object", "properties": {"question": {"type": "string"}}},
+        )
+
+    async def run(self, arguments: Mapping[str, Any]) -> ToolResult:
+        self.arguments_recus.append(dict(arguments))
+        return ToolResult(observation=self._observation, sources=self._sources)

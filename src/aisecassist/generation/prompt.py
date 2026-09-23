@@ -22,11 +22,11 @@ empecher la persuasion.
 
 from __future__ import annotations
 
-import re
 import secrets
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from aisecassist.security.prompt_sanitation import neutralize_markers, safe_source
 from aisecassist.vectorstore.base import SearchResult
 
 # 16 octets, soit 32 caracteres hexadecimaux. Assez pour qu'un attaquant ne
@@ -34,17 +34,9 @@ from aisecassist.vectorstore.base import SearchResult
 # d'une requete.
 _NONCE_BYTES = 16
 
-# Tout ce qui ressemble a un delimiteur est neutralise dans le contenu, quelle
-# que soit la valeur du nonce. Le nonce reel etant imprevisible, cette regle ne
-# devrait jamais rien attraper — c'est precisement pour cela qu'on la met : elle
-# ne coute rien et couvre le cas ou la generation du nonce serait affaiblie un
-# jour par erreur.
-_FORME_DELIMITEUR = re.compile(r"=== *(?:CONTEXTE|QUESTION)-[0-9a-fA-F]{8,} *===")
-_MARQUEUR_RETIRE = "[marqueur retire]"
-
-# Plafond de longueur d'une provenance affichee dans le prompt. Un nom de
-# fichier legitime tient tres largement en dessous.
-_SOURCE_MAX = 200
+# La neutralisation des marqueurs vit dans `security/prompt_sanitation.py` :
+# l'agent de M3 insere lui aussi des extraits recuperes dans un prompt, et les
+# deux chemins doivent partager la meme implementation.
 
 # Les instructions designent les marqueurs par leur PREFIXE, jamais par leur
 # valeur complete. Ecrire le marqueur entier ici le ferait apparaitre trois fois
@@ -104,7 +96,7 @@ def build_prompt(question: str, results: Sequence[SearchResult]) -> AssembledPro
         if resultat.source not in sources:
             sources.append(resultat.source)
         extraits.append(
-            f"[{rang}] source : {_source_sure(resultat.source)}\n{_neutraliser(resultat.text)}"
+            f"[{rang}] source : {safe_source(resultat.source)}\n{neutralize_markers(resultat.text)}"
         )
 
     corps_contexte = "\n\n".join(extraits) if extraits else "(aucun extrait pertinent)"
@@ -115,39 +107,7 @@ def build_prompt(question: str, results: Sequence[SearchResult]) -> AssembledPro
         # La question est elle aussi une entree hostile : on la clot de la meme
         # facon, pour qu'elle ne puisse pas se faire passer pour du contexte ni
         # pour une instruction (SEC-01, volet injection directe).
-        f"{debut_question}\n{_neutraliser(question)}\n{debut_question}"
+        f"{debut_question}\n{neutralize_markers(question)}\n{debut_question}"
     )
 
     return AssembledPrompt(text=texte, nonce=nonce, sources=tuple(sources))
-
-
-def _neutraliser(contenu: str) -> str:
-    """Retire du contenu tout ce qui a la forme d'un delimiteur de bloc."""
-    return _FORME_DELIMITEUR.sub(_MARQUEUR_RETIRE, contenu)
-
-
-def _source_sure(source: str) -> str:
-    """Rend une provenance sure a interpoler sur une seule ligne du prompt.
-
-    La provenance emprunte exactement le meme chemin non fiable que le texte :
-    c'est une valeur du payload Qdrant, ecrite a l'ingestion ou directement en
-    base. Une premiere version neutralisait le texte et oubliait la source qui
-    l'accompagne — un nom de fichier contenant un saut de ligne suffisait alors
-    a rompre la structure "[n] source : X" et a faire passer du texte pour une
-    nouvelle entree de contexte.
-
-    Trois mesures, dans cet ordre :
-
-    1. Les sauts de ligne deviennent des espaces. La provenance doit tenir sur
-       une ligne, sinon elle cree une structure qu'elle n'est pas censee creer.
-    2. Neutralisation de la forme des delimiteurs — appliquee **apres** l'etape
-       precedente, pour attraper un marqueur qui aurait ete reassemble par le
-       repliement des lignes.
-    3. Plafond de longueur : un nom de fichier legitime tient largement dessous,
-       et une valeur demesuree ne doit pas gonfler le prompt.
-    """
-    sur_une_ligne = source.replace("\r", " ").replace("\n", " ")
-    neutralise = _neutraliser(sur_une_ligne).strip()
-    if len(neutralise) > _SOURCE_MAX:
-        return neutralise[:_SOURCE_MAX] + "…"
-    return neutralise

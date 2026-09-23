@@ -67,6 +67,12 @@ class Settings(BaseSettings):
     # les scores nécessaires.
     retrieval_min_score: float = Field(default=0.64, ge=-1.0, le=1.0)
 
+    # --- Agent (M3) ---
+    # Nombre maximal de tours d'outils avant que l'agent ne soit coupé (SEC-06).
+    # Sans plafond, un agent qui ne trouve rien relance indéfiniment : c'est un
+    # déni de service qu'on s'inflige, et la facture d'inférence avec.
+    agent_max_iterations: int = Field(default=3, gt=0)
+
     # --- Generation ---
     # Plafond de longueur d'une reponse (SEC-10). En streaming surtout : une
     # generation qui part en boucle produirait des fragments indefiniment, et

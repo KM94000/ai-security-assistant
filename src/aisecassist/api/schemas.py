@@ -9,11 +9,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
-# Plafond de longueur d'une question. Limite de securite plus que de confort :
-# une question tres longue gonfle le prompt, donc le cout et la latence
-# (SECURITY.md, SEC-10). Volontairement non configurable par environnement, au
-# meme titre que la liste blanche d'extensions a l'ingestion.
-MAX_QUESTION_LENGTH = 2_000
+from aisecassist.security.limits import MAX_QUESTION_LENGTH
 
 
 class QueryRequest(BaseModel):
