@@ -235,6 +235,10 @@ class AgentService:
                     role="tool",
                     content=resultat.observation,
                     tool_name=_nom_sur(appel.name),
+                    # Non assaini, contrairement au nom : l'identifiant vient du
+                    # fournisseur, pas du modele, et il doit etre rendu tel quel
+                    # pour que l'appel soit reconnu (ADR-0013).
+                    tool_call_id=appel.id,
                 )
             )
             sources.extend(source for source in resultat.sources if source not in sources)

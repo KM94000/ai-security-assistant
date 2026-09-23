@@ -68,6 +68,15 @@ class ChatMessage:
     tool_name: str | None = None
     """Nom de l'outil dont ce message porte le resultat, pour `role="tool"`."""
 
+    tool_call_id: str | None = None
+    """Appel auquel ce resultat repond, quand le fournisseur raisonne par identifiant.
+
+    Ollama apparie la demande et son resultat par l'ordre des messages. Les API
+    de forme OpenAI exigent la reference explicite, et rejettent la conversation
+    sans elle. L'agent renseigne ce champ depuis `ToolCall.id` ; les
+    fournisseurs qui n'en ont pas l'usage l'ignorent (ADR-0013).
+    """
+
     tool_calls: tuple["ToolCall", ...] = field(default_factory=tuple)
     """Appels demandes par le modele, pour `role="assistant"`.
 
@@ -104,6 +113,18 @@ class ToolCall:
 
     name: str
     arguments: Mapping[str, Any]
+    id: str | None = None
+    """Identifiant de l'appel, quand le fournisseur en attribue un.
+
+    Ollama n'en produit pas et n'en attend pas : le resultat d'outil suit sa
+    demande dans l'ordre, cela suffit. Les API de forme OpenAI, elles, exigent
+    que chaque resultat reference l'appel qui l'a provoque, et refusent la
+    conversation sinon.
+
+    Le champ est donc porte par le type commun plutot que reconstruit par
+    position dans l'historique — un appel *a* une identite, c'est une notion du
+    domaine, et seuls certains fournisseurs s'en servent (ADR-0013).
+    """
 
 
 @dataclass(frozen=True, slots=True)

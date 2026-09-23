@@ -53,7 +53,7 @@ d'usage de sécurité de premier plan**, pas comme une couche annexe.
 |---|---|---|
 | API | **FastAPI** + Uvicorn | async, streaming SSE, OpenAPI auto |
 | LLM (dev) | **Ollama** + `llama3.1` | local, gratuit, derrière `LLMProvider` |
-| LLM (prod) | OpenAI / Azure | swappable sans toucher au métier |
+| LLM (hébergé) | **tout service de forme OpenAI** (Groq par défaut) | `LLM_PROVIDER=hosted` ; vérifié, pas supposé (ADR-0013) |
 | Embeddings | **`ibm-granite/granite-embedding-107m-multilingual`** | **384 dimensions**, local, multilingue, révision épinglée (ADR-0010) |
 | Base vectorielle | **Qdrant** (Docker) | derrière `VectorStore` |
 | Agents | **LangGraph** | RAG exposé comme outil |

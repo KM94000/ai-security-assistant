@@ -1,5 +1,42 @@
 # Changelog
 
+## [Non publie] - Ticket 26 : un second fournisseur de modele, pour verifier que l'abstraction tient
+### Ajoute
+- **`OpenAICompatibleProvider`** : une seule implementation pour Groq, OpenAI,
+  Together, Mistral, Fireworks ou un vLLM local — tous exposent la meme forme
+  d'API. On en change par `HOSTED_LLM_BASE_URL`, sans toucher au code.
+- `LLM_PROVIDER` (`ollama` par defaut, `hosted` au choix), `HOSTED_LLM_BASE_URL`,
+  `HOSTED_LLM_MODEL`, `HOSTED_LLM_API_KEY`, `HOSTED_LLM_TIMEOUT_S`.
+- La configuration **refuse de se charger** si le fournisseur heberge est actif
+  sans cle : sinon la panne n'apparaitrait qu'a la premiere question, sous la
+  forme d'un 503 generique qui ne nomme pas sa cause.
+- ADR-0013, et trois tests d'integration contre le vrai service (marques
+  `network`), dont l'aller-retour complet d'un appel d'outil.
+
+### Ce que l'exercice a revele
+- **Le code metier n'a pas bouge d'une ligne.** Le seul `if` distinguant les deux
+  fournisseurs est dans la racine de composition, dont c'est le role.
+- **Mais les types partages ont eu besoin de deux champs** : `ToolCall.id` et
+  `ChatMessage.tool_call_id`. Les API de forme OpenAI exigent que chaque resultat
+  d'outil reference l'appel qui l'a provoque ; Ollama les apparie par l'ordre des
+  messages. Les deux champs sont facultatifs, et les deux implementations se
+  replient sur le nom de l'outil en leur absence — un historique produit par l'une
+  reste rejouable par l'autre.
+- Mesure : `/query` passe de 97,8 s a 3,4 s, et l'agent effectue trois tours
+  d'outils en 17,4 s la ou le modele local en faisait un en 28,4 s.
+
+### Securite
+- Le guardrail de sortie reconnait desormais la forme des cles Groq. Un guardrail
+  qui ignore le secret que l'application manipule elle-meme protege tout le monde
+  sauf nous (SEC-02).
+- La cle n'apparait dans aucun log ni dans aucun message d'erreur : le corps
+  d'erreur d'un fournisseur peut refleter l'en-tete recu, donc on ne le lit pas
+  et on ne retient que le code de statut. Un test le verifie.
+- **SEC-07 : observation datee consignee.** `llama3.1` a spontanement imite la
+  forme de nos delimiteurs de contexte dans une reponse. Non reproduit sur
+  `gpt-oss-120b` : la divulgation depend du modele, ce qui interdit de conclure
+  d'un seul essai. Protocole de mesure note pour M5.
+
 ## [Non publie] - M3, ticket 21 : `POST /agent`, et le budget de temps de l'agent
 ### Ajoute
 - **Route `POST /agent`** : le livrable de M3. Meme schema d'entree que `/query`

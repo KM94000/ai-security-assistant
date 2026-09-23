@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -16,7 +18,28 @@ class Settings(BaseSettings):
     app_name: str = "AI Security Assistant"
     environment: str = "development"
 
-    # --- LLM (ADR-0003 : Ollama en local) ---
+    # --- Choix du fournisseur de modèle (ADR-0013) ---
+    # `ollama` reste le défaut : gratuit, hors ligne, et c'est ce que la CI et
+    # les tests d'intégration supposent. `hosted` bascule sur un service de
+    # forme OpenAI — Groq, OpenAI, Together, Mistral — sans qu'aucune ligne de
+    # code métier ne change. C'est précisément la promesse de l'ADR-0003.
+    llm_provider: Literal["ollama", "hosted"] = "ollama"
+
+    # --- LLM hébergé (ADR-0013) ---
+    # Défaut pointé sur Groq : palier gratuit, et le plus rapide — ce qui
+    # compte pour M5, où chaque attaque est rejouée N fois pour mesurer sa
+    # reproductibilité.
+    hosted_llm_base_url: str = "https://api.groq.com/openai/v1"
+    hosted_llm_model: str = "openai/gpt-oss-120b"
+    # Jamais écrite en dur, jamais journalisée (SEC-12). Le guardrail de sortie
+    # reconnaît la forme des clés Groq, au cas où elle transiterait par une
+    # réponse (SEC-02).
+    hosted_llm_api_key: str | None = None
+    # Un service hébergé répond en quelques secondes, pas en quelques minutes :
+    # ce délai n'a aucune raison d'être celui d'un modèle local sur processeur.
+    hosted_llm_timeout_s: float = Field(default=60.0, gt=0)
+
+    # --- LLM local (ADR-0003 : Ollama en local) ---
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.1"
     # 120 s et non 60 : le premier appel a un Ollama local paie le chargement du
@@ -120,6 +143,20 @@ class Settings(BaseSettings):
         dans une collection dégraderait la recherche sans erreur visible.
         """
         return f"{self.embedding_model}@{self.embedding_model_revision}"
+
+    @model_validator(mode="after")
+    def _exiger_une_cle_si_le_fournisseur_est_heberge(self) -> "Settings":
+        """Refuse un démarrage voué à échouer au premier appel.
+
+        Sans cette règle, l'application démarrerait, répondrait `200` sur
+        `/health`, et ne révélerait le problème qu'à la première question d'un
+        utilisateur — sous la forme d'un 503 générique, dont le message ne
+        nomme volontairement pas la cause. Autant le dire au chargement de la
+        configuration, là où on peut encore nommer la variable manquante.
+        """
+        if self.llm_provider == "hosted" and not self.hosted_llm_api_key:
+            raise ValueError("HOSTED_LLM_API_KEY est requise quand LLM_PROVIDER vaut « hosted ».")
+        return self
 
     @model_validator(mode="after")
     def _verifier_la_coherence_du_decoupage(self) -> "Settings":
