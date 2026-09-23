@@ -7,6 +7,7 @@ recharger le modele d'embeddings a chaque requete rendrait l'API inutilisable.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import cast
 
@@ -19,8 +20,11 @@ from aisecassist.config import settings
 from aisecassist.embeddings.sentence_transformer import SentenceTransformerEmbedder
 from aisecassist.generation.service import GenerationService
 from aisecassist.llm.ollama import OllamaProvider
+from aisecassist.llm.openai_compatible import OpenAICompatibleProvider
 from aisecassist.retrieval.service import RetrievalService
 from aisecassist.vectorstore.qdrant import QdrantVectorStore
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,8 +37,40 @@ class Services:
     # Conserves pour pouvoir fermer leurs clients a l'arret ; les routes ne les
     # utilisent pas directement, elles passent par les services ci-dessus.
     store: QdrantVectorStore
-    llm: OllamaProvider
+    # Union de types concrets, et non une interface : la racine de composition
+    # est le seul endroit qui a le droit de connaitre les implementations, et
+    # `aclose()` n'appartient pas au contrat metier d'un fournisseur.
+    llm: OllamaProvider | OpenAICompatibleProvider
     cve: CveLookupTool
+
+
+def _construire_le_fournisseur() -> OllamaProvider | OpenAICompatibleProvider:
+    """Choisit l'implementation de modele selon la configuration (ADR-0013).
+
+    C'est le seul `if` du projet qui distingue les deux fournisseurs. Tout le
+    reste — generation, agent, outils — ne connait que les interfaces, et ne
+    peut donc pas savoir lequel repond.
+    """
+    if settings.llm_provider == "ollama":
+        return OllamaProvider(
+            base_url=settings.ollama_base_url,
+            model=settings.ollama_model,
+            timeout_s=settings.llm_timeout_s,
+        )
+
+    # La cle est garantie presente : la configuration refuse de se charger sans
+    # elle quand le fournisseur est heberge.
+    logger.info(
+        "Fournisseur heberge actif : %s, modele %s.",
+        settings.hosted_llm_base_url,
+        settings.hosted_llm_model,
+    )
+    return OpenAICompatibleProvider(
+        base_url=settings.hosted_llm_base_url,
+        model=settings.hosted_llm_model,
+        api_key=settings.hosted_llm_api_key or "",
+        timeout_s=settings.hosted_llm_timeout_s,
+    )
 
 
 def build_services() -> Services:
@@ -49,11 +85,7 @@ def build_services() -> Services:
         settings.qdrant_collection,
         embedding_model=settings.embedding_model_id,
     )
-    llm = OllamaProvider(
-        base_url=settings.ollama_base_url,
-        model=settings.ollama_model,
-        timeout_s=settings.llm_timeout_s,
-    )
+    llm = _construire_le_fournisseur()
     cve = CveLookupTool(
         base_url=settings.nvd_base_url,
         timeout_s=settings.nvd_timeout_s,

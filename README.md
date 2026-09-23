@@ -49,8 +49,9 @@ curl -X POST http://localhost:8000/agent \
 
 ## 💬 A quoi ca ressemble vraiment
 
-Echanges reels, captures le 23 septembre 2026 sur un portable sans carte
-graphique — les durees sont celles d'un modele local sur processeur.
+Echanges reels, captures le 23 septembre 2026. Les durees sont celles du mode
+heberge (`LLM_PROVIDER=hosted`) ; le meme code en local sur processeur repond
+entre dix et trente fois plus lentement, comparaison chiffree plus bas.
 
 ### Refuser plutot que supposer
 
@@ -59,7 +60,7 @@ demo de RAG.
 
 ```jsonc
 POST /query   {"question": "Quelle est la recette traditionnelle du cassoulet ?"}
-// 200, 8,3 s
+// 200, 0,3 s
 {
   "answer": "Le corpus ne contient aucun extrait pertinent pour cette question.
              Je prefere ne pas repondre plutot que de supposer.",
@@ -67,36 +68,62 @@ POST /query   {"question": "Quelle est la recette traditionnelle du cassoulet ?"
 }
 ```
 
-Le modele n'a **pas** ete appele : aucun extrait n'ayant atteint le seuil de
-pertinence, la question s'arrete avant lui. Sans ce seuil, la recherche aurait
-renvoye ses cinq extraits les moins mauvais et le modele aurait brode
-(ADR-0010).
+Le modele n'a **pas** ete appele — d'ou les 0,3 s. Aucun extrait n'ayant atteint
+le seuil de pertinence, la question s'arrete avant lui. Sans ce seuil, la
+recherche aurait renvoye ses cinq extraits les moins mauvais et le modele aurait
+brode (ADR-0010).
 
-### L'agent choisit ses outils
+### L'agent choisit ses outils, et en enchaine plusieurs
 
 ```jsonc
 POST /agent   {"question": "Que decrit la CVE-2021-44228, et a quelle categorie
                             du OWASP LLM Top 10 ce type de faille se rattache-t-il ?"}
-// 200, 28,4 s
+// 200, 17,4 s
 {
-  "answer": "La CVE-2021-44228 est une faille de securite dans le composant Log4j2
-             d'Apache, qui permet a un attaquant d'executer du code arbitraire si
-             les messages de journalisation contiennent des informations controlees
-             par l'attaquant. [...]",
-  "sources": ["https://nvd.nist.gov/vuln/detail/CVE-2021-44228"],
-  "iterations": 1
+  "answer": "**CVE-2021-44228 (Log4Shell)** [...] Un attaquant qui peut controler
+             le texte journalise peut injecter une reference JNDI qui declenche une
+             recherche d'objet a distance [...] Score CVSS : 10.0 (CRITICAL) [...]",
+  "sources": [
+    "https://nvd.nist.gov/vuln/detail/CVE-2021-44228",
+    "owasp-llm-top10.md"
+  ],
+  "iterations": 3
 }
 ```
 
-**Ce que cette reponse montre, y compris ses limites.** L'agent a consulte la
-base du NIST — la source le prouve — et sa description de la faille en vient.
-Mais `iterations: 1` dit qu'il n'a fait **qu'un** tour : la seconde moitie de la
-question, le rattachement au OWASP LLM Top 10, il y a repondu de memoire, sans
-consulter le corpus. Et sa reponse sur ce point est approximative.
+**Deux sources de nature differente** — une base de vulnerabilites interrogee en
+direct, et le corpus indexe — dans une seule reponse. C'est ce que l'agent
+apporte par rapport a `/query`, qui ne cherche qu'une fois, au meme endroit.
 
-C'est exactement pour cela que `sources` et `iterations` sont renvoyes. Un
-lecteur voit ce qui a ete verifie et ce qui ne l'a pas ete, au lieu d'avoir a
-faire confiance a un texte assure de lui.
+### Ce que ces indicateurs servent a voir
+
+Ils ne sont pas decoratifs : ils servent a reperer ce qui cloche. Ici, la
+reponse rattache Log4Shell a la categorie « injection de prompt » du OWASP LLM
+Top 10 — **ce qui est faux**. Log4Shell est une execution de code a distance
+classique, sans rapport avec un LLM.
+
+La partie verifiee est juste, parce qu'elle vient du NIST. L'analogie, elle, est
+une construction du modele. Un lecteur qui voit `sources` et `iterations` peut
+faire cette distinction ; devant un texte assure de lui et sans provenance, il ne
+le pourrait pas.
+
+C'est aussi la raison d'etre du jalon M6 : mesurer la fidelite des reponses aux
+sources, au lieu de la supposer.
+
+### Le meme code, deux fournisseurs
+
+Le basculement se fait par une variable d'environnement (ADR-0013) ; aucun module
+metier ne change.
+
+| Requete | Local (`llama3.1`, CPU) | Heberge (`gpt-oss-120b`) |
+|---|---|---|
+| `/query` — question de fond | 97,8 s | **3,4 s** |
+| `/agent` — question croisant deux sources | 28,4 s, 1 tour | **17,4 s, 3 tours** |
+| `/query` — hors corpus (refus) | 8,3 s | 0,3 s |
+
+La ligne de l'agent est la plus parlante : **trois fois plus de travail en 40 %
+de temps en moins.** Le modele local s'arretait au premier outil et repondait de
+memoire pour le reste.
 
 ## 🎯 Ce que ce projet demontre
 - Architecture RAG + agents pensee pour la production

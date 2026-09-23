@@ -30,6 +30,10 @@ REMPLACEMENT = "[secret redige]"
 _MOTIFS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("cle privee", re.compile(r"-----BEGIN [A-Z ]{0,20}PRIVATE KEY-----")),
     ("cle de fournisseur", re.compile(r"\bsk-[A-Za-z0-9_-]{20,64}\b")),
+    # Forme des cles Groq. Ajoutee au ticket 26, quand le produit s'est mis a
+    # detenir une telle cle : un guardrail qui ne reconnait pas le secret que
+    # l'application manipule elle-meme protege tout le monde sauf nous.
+    ("cle groq", re.compile(r"\bgsk_[A-Za-z0-9]{20,64}\b")),
     ("cle aws", re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")),
     ("jeton github", re.compile(r"\bgh[pousr]_[A-Za-z0-9]{36}\b")),
     ("en-tete bearer", re.compile(r"(?i)\bbearer\s{1,4}[A-Za-z0-9._~+/=-]{20,64}")),
