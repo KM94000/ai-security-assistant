@@ -73,6 +73,24 @@ class Settings(BaseSettings):
     # déni de service qu'on s'inflige, et la facture d'inférence avec.
     agent_max_iterations: int = Field(default=3, gt=0)
 
+    # --- Outil CVE / NVD (ticket 20, ADR-0012) ---
+    # Base de l'API publique du NIST. C'est une valeur de configuration, jamais
+    # une donnée fournie par le modèle : celui-ci choisit *quelle* CVE consulter,
+    # jamais *où* aller la chercher. La distinction est la barrière anti-SSRF.
+    nvd_base_url: str = "https://services.nvd.nist.gov"
+    # Plus court que le délai du modèle : une recherche de CVE qui traîne doit
+    # rendre la main à l'agent, pas immobiliser la requête entière.
+    nvd_timeout_s: float = Field(default=10.0, gt=0)
+    # Clé d'API facultative. Sans elle, le NIST limite à 5 requêtes par fenêtre
+    # de 30 secondes — or l'agent peut en émettre jusqu'à 9 pour une seule
+    # question (3 appels par tour × 3 tours). Avec elle, la limite passe à 50.
+    # Jamais écrite en dur, jamais journalisée (SEC-12).
+    nvd_api_key: str | None = None
+    # Plafond de longueur d'une description de CVE réinjectée dans le prompt
+    # (SEC-10). Une description du NIST dépasse rarement 2 000 caractères, mais
+    # c'est du texte tiers : sa taille n'est pas sous notre contrôle.
+    cve_description_max_chars: int = Field(default=1_500, gt=0)
+
     # --- Generation ---
     # Plafond de longueur d'une reponse (SEC-10). En streaming surtout : une
     # generation qui part en boucle produirait des fragments indefiniment, et

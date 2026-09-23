@@ -14,8 +14,10 @@ from __future__ import annotations
 
 import logging
 
+import httpx
 import pytest
 
+from aisecassist.agents.cve import CveLookupTool
 from aisecassist.agents.service import (
     APPELS_MAX_PAR_TOUR,
     MESSAGE_PLAFOND,
@@ -174,3 +176,105 @@ async def test_les_arguments_dun_appel_ne_sont_pas_journalises(
     assert "question" in caplog.text
     assert secret not in caplog.text
     assert "Hunter2" not in caplog.text
+
+
+# --- Perimetre d'un outil qui sort de la machine (ticket 20) ------------------
+#
+# L'outil CVE appelle un service tiers. Trois questions se posent alors, qui ne
+# se posaient pas pour la recherche dans le corpus : le modele peut-il choisir
+# la destination, peut-il faire autre chose que lire, et combien d'appels
+# peut-il declencher ?
+
+
+def _outil_cve_observe() -> tuple[CveLookupTool, list[httpx.Request]]:
+    emises: list[httpx.Request] = []
+
+    def enregistrer(request: httpx.Request) -> httpx.Response:
+        emises.append(request)
+        return httpx.Response(200, json={"vulnerabilities": []})
+
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(enregistrer), base_url="https://nvd.test"
+    )
+    outil = CveLookupTool(
+        base_url="https://nvd.test",
+        timeout_s=5.0,
+        description_max_chars=1_500,
+        client=client,
+    )
+    return outil, emises
+
+
+async def test_la_destination_ne_depend_jamais_du_modele() -> None:
+    """La barriere anti-SSRF, enoncee dans le sens positif.
+
+    Les tests SEC-05 montrent qu'un argument malforme n'emet aucune requete.
+    Celui-ci montre le complement : meme pour un appel parfaitement legitime, la
+    destination vient de la configuration. Le modele choisit *quelle* CVE, le
+    code choisit *ou* la chercher — et il n'existe aucun argument par lequel
+    influencer l'hote.
+    """
+    outil, emises = _outil_cve_observe()
+
+    await outil.run({"identifiant": "CVE-2021-44228"})
+
+    assert emises[0].url.host == "nvd.test"
+
+
+async def test_loutil_cve_est_en_lecture_seule() -> None:
+    """Moindre privilege : rien de ce que le modele demande ne peut ecrire."""
+    outil, emises = _outil_cve_observe()
+
+    await outil.run({"identifiant": "CVE-2021-44228"})
+
+    assert [requete.method for requete in emises] == ["GET"]
+
+
+async def test_le_nombre_dappels_sortants_reste_plafonne() -> None:
+    """Le plafond par tour vaut aussi pour les appels vers un tiers.
+
+    Sans lui, un modele detourne se servirait de l'agent comme d'un relais pour
+    marteler un service externe — au nom du serveur, et dans son quota.
+    """
+    outil, emises = _outil_cve_observe()
+    rafale = ChatReply(
+        text="",
+        tool_calls=tuple(
+            ToolCall(name="consulter_cve", arguments={"identifiant": f"CVE-2021-4422{n}"})
+            for n in range(7)
+        ),
+    )
+    service = AgentService(
+        ScriptedChatLLM([rafale, ChatReply(text="fini")]),
+        [outil],
+        max_iterations=1,
+        max_answer_chars=8_000,
+    )
+
+    await service.answer("Plusieurs CVE d'un coup ?")
+
+    assert len(emises) == APPELS_MAX_PAR_TOUR
+
+
+async def test_la_cle_dapi_napparait_jamais_dans_les_logs(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Acompte sur SEC-12 : un secret de configuration ne doit pas fuir par les logs."""
+    cle = "cle-nvd-de-test-a-ne-pas-journaliser"
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"vulnerabilities": []})),
+        base_url="https://nvd.test",
+    )
+    outil = CveLookupTool(
+        base_url="https://nvd.test",
+        timeout_s=5.0,
+        api_key=cle,
+        description_max_chars=1_500,
+        client=client,
+    )
+
+    with caplog.at_level(logging.DEBUG):
+        await outil.run({"identifiant": "CVE-2021-44228"})
+
+    assert "CVE-2021-44228" in caplog.text
+    assert cle not in caplog.text

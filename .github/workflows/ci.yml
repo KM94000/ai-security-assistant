@@ -117,6 +117,8 @@ jobs:
           restore-keys: huggingface-
       - name: Tests d'integration
         # `not llm` exclut les tests qui exigent un serveur Ollama : 4,9 Go de
-        # poids ne se telechargent pas raisonnablement a chaque execution. Ces
+        # poids ne se telechargent pas raisonnablement a chaque execution.
+        # `not network` exclut ceux qui appellent un service tiers : la CI ne
+        # doit rougir que pour nos regressions, pas pour le quota du NIST. Ces
         # tests restent a lancer en local avec `pytest -m integration`.
-        run: pytest -m "integration and not llm" -v
+        run: pytest -m "integration and not llm and not network" -v

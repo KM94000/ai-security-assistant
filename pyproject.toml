@@ -87,6 +87,11 @@ markers = [
     # telecharger le modele d'embeddings (220 Mo), mais pas heberger Ollama et
     # ses 4,9 Go de poids. La CI lance donc : pytest -m "integration and not llm".
     "llm: exige un serveur Ollama joignable ; non executable en CI",
+    # Meme logique que `llm`, pour une autre raison : la CI ne doit pas dependre
+    # de la disponibilite ni du quota d'un service tiers. Un test qui echoue
+    # parce que le NIST est lent n'apprend rien sur notre code, et une CI qui
+    # rougit sans raison finit par ne plus etre lue.
+    "network: exige un acces sortant vers un service tiers ; non executable en CI",
 ]
 
 [tool.bandit]
