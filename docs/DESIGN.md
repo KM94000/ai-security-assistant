@@ -106,6 +106,30 @@ code. Ensuite, **à bénéfice comparable, on préfère le déterministe** : un
 découpage structurel coûte moins cher et se teste mieux qu'un enrichissement
 généré.
 
+### Quand un outil sort de la machine : le cas du NIST
+
+Le corpus ne peut pas tout couvrir. Une question sur une vulnérabilité nommée
+appelle une source à jour, ce qu'un corpus figé n'est pas. D'où un second outil,
+qui interroge la base publique du NIST (ADR-0012) — et qui change la nature du
+problème, puisque c'est le premier à quitter la machine.
+
+**Ce qui a été écarté, et pourquoi.** Un instantané local de la base CVE aurait
+supprimé le réseau, le quota et l'intermittence : plusieurs gigaoctets, périmés
+en quelques jours, et surtout une façon d'esquiver la question plutôt que d'y
+répondre. OSV.dev, plus rapide et sans quota, est centré sur les paquets open
+source : moins canonique pour une CVE isolée. Une interface abstraite sur la
+source de données, enfin, aurait été une supposition sur un besoin futur : le
+client HTTP injectable suffit aux tests, et l'abstraction se posera le jour où
+une seconde source existera.
+
+**La règle qui en sort, et qui vaudra pour tout outil futur.** Le modèle choisit
+*quoi*, le code choisit *où*. La destination ne doit être dérivable d'aucun
+argument — et la preuve attendue n'est pas qu'un argument malformé soit refusé,
+mais qu'**aucune requête ne parte**. Corollaire sur les pannes : un tiers
+indisponible ne fait pas tomber la requête, mais l'échec remonte formulé jusqu'à
+l'utilisateur. Dégrader en silence produirait une réponse assurée sur une
+vérification qui n'a pas eu lieu — pire que l'erreur qu'on cherchait à éviter.
+
 ## 6. Sécurité — approche
 
 Le produit est un outil de sécurité : sa crédibilité dépend de sa propre

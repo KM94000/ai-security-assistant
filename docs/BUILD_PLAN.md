@@ -79,8 +79,8 @@ multi-outils.
 
 | # | Ticket | Critère d'acceptation | Sécu |
 |---|---|---|---|
-| 19 | Agent LangGraph, RAG exposé comme outil | l'agent choisit d'appeler le RAG quand pertinent | SEC-06 |
-| 20 | 1-2 outils supplémentaires (ex. lookup CVE) | l'agent sélectionne le bon outil ; args validés | SEC-05, SEC-06 |
+| 19 ✅ | Agent LangGraph, RAG exposé comme outil | l'agent choisit d'appeler le RAG quand pertinent | SEC-06 |
+| 20 ✅ | Outil `consulter_cve` (base du NIST) — ADR-0012 | l'agent sélectionne le bon outil ; args validés | SEC-05, SEC-06 |
 | 21 | Endpoint `POST /agent` | question complexe → réponse multi-étapes tracée | SEC-01, SEC-06 |
 | 22 | (option) exposer un outil en MCP | conforme au protocole | SEC-06 |
 

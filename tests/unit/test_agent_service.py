@@ -150,3 +150,66 @@ async def test_un_agent_sans_outil_est_refuse_a_la_construction() -> None:
             max_iterations=3,
             max_answer_chars=8_000,
         )
+
+
+# --- Plusieurs outils (ticket 20) ---------------------------------------------
+
+
+async def test_avec_deux_outils_seul_celui_demande_est_execute() -> None:
+    """Le critere d'acceptation du ticket 20, cote aiguillage.
+
+    Que le modele choisisse *bien* n'est pas testable ici — c'est l'objet du
+    test contre le vrai modele. Ce qui l'est, et qui doit l'etre : quand il
+    designe un outil, c'est celui-la qui s'execute, et lui seul.
+    """
+    corpus = FakeTool(name="rechercher_corpus", observation="extrait", sources=("owasp.md",))
+    cve = FakeTool(name="consulter_cve", observation="CVE-2021-44228", sources=("nvd",))
+    llm = ScriptedChatLLM(
+        [
+            ChatReply(
+                text="",
+                tool_calls=(
+                    ToolCall(name="consulter_cve", arguments={"identifiant": "CVE-2021-44228"}),
+                ),
+            ),
+            ChatReply(text="Log4Shell permet l'execution de code a distance."),
+        ]
+    )
+
+    resultat = await _agent(llm, corpus, cve).answer("Que fait CVE-2021-44228 ?")
+
+    assert cve.arguments_recus == [{"identifiant": "CVE-2021-44228"}]
+    assert corpus.arguments_recus == []
+    assert resultat.sources == ("nvd",)
+
+
+async def test_les_deux_outils_sont_presentes_au_modele() -> None:
+    """Un outil absent de la declaration est un outil que le modele n'appellera pas."""
+    corpus = FakeTool(name="rechercher_corpus")
+    cve = FakeTool(name="consulter_cve")
+    llm = ScriptedChatLLM([ChatReply(text="reponse directe")])
+
+    await _agent(llm, corpus, cve).answer("question")
+
+    assert sorted(spec.name for spec in llm.outils_presentes) == [
+        "consulter_cve",
+        "rechercher_corpus",
+    ]
+
+
+async def test_les_sources_de_plusieurs_outils_sont_cumulees_sans_doublon() -> None:
+    """Une reponse peut s'appuyer sur le corpus et sur le NIST a la fois."""
+    corpus = FakeTool(name="rechercher_corpus", sources=("owasp.md", "nist.md"))
+    cve = FakeTool(name="consulter_cve", sources=("nist.md", "nvd/CVE-2021-44228"))
+    rafale = ChatReply(
+        text="",
+        tool_calls=(
+            ToolCall(name="rechercher_corpus", arguments={"question": "log4j"}),
+            ToolCall(name="consulter_cve", arguments={"identifiant": "CVE-2021-44228"}),
+        ),
+    )
+    llm = ScriptedChatLLM([rafale, ChatReply(text="synthese")])
+
+    resultat = await _agent(llm, corpus, cve).answer("question")
+
+    assert resultat.sources == ("owasp.md", "nist.md", "nvd/CVE-2021-44228")

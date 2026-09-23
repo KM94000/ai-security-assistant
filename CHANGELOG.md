@@ -1,5 +1,46 @@
 # Changelog
 
+## [Non publie] - M3, ticket 20 : consultation d'une CVE, premier outil qui sort de la machine
+### Ajoute
+- **Outil `consulter_cve`** : interroge la base publique du NIST (NVD) pour un
+  identifiant donne, et rend sa description, sa date de publication et son score
+  CVSS v3.1. Lecture seule.
+- **Deuxieme outil, donc vrai arbitrage.** Le critere d'acceptation de M3 —
+  « l'agent selectionne le bon outil » — devient verifiable : un test contre le
+  vrai modele montre qu'une question sur une CVE nommee part vers le NIST, et
+  une question de fond vers le corpus.
+- `NVD_BASE_URL`, `NVD_TIMEOUT_S`, `NVD_API_KEY` (facultative) et
+  `CVE_DESCRIPTION_MAX_CHARS` en configuration.
+- Marqueur de test `network`, exclu de la CI au meme titre que `llm`.
+- ADR-0012.
+
+### Securite
+- **Le modele choisit quelle CVE, jamais ou la chercher.** L'hote et le chemin
+  viennent de la configuration ; l'identifiant est valide par une expression
+  reguliere ancree, puis transmis comme parametre de requete encode. Les tests
+  SEC-05 verifient qu'un identifiant non conforme **n'emet aucune requete** —
+  c'est cette propriete qui ferme la porte au SSRF, pas le refus lui-meme.
+- Un message de refus ne recopie jamais la valeur fautive : la charge ne doit
+  pas revenir dans le prompt par la porte de l'erreur.
+- **Une panne du tiers n'est pas une panne du produit.** Delai depasse, 5xx,
+  JSON illisible, quota refuse : chacun devient une observation qui dit au
+  modele de repondre sans la verification, et de le preciser.
+- La description renvoyee par le NIST est du contenu tiers : plafonnee puis
+  assainie comme un extrait du corpus (SEC-01b, SEC-10).
+- Le plafond d'appels par tour borne aussi les appels sortants : un modele
+  detourne ne peut pas se servir de l'agent comme relais pour marteler un
+  service externe.
+- La cle d'API n'apparait dans aucun log, et un test le verifie.
+
+### Teste
+- 19 tests unitaires sur l'outil, avec un transport factice : cas nominal,
+  quota, panne, delai, JSON illisible, description piegee, absence de score.
+- 14 tests de securite supplementaires (SEC-05 et SEC-06).
+- 3 tests unitaires sur l'aiguillage entre deux outils.
+- 2 tests d'integration contre la vraie base du NIST, marques `network` : ils
+  verifient le contrat suppose au service — chemin, parametre, forme de la
+  reponse — et c'est eux qui detecteront un changement de son API.
+
 ## [Non publie] - M3, ticket 19 : agent LangGraph, le RAG expose comme outil
 ### Ajoute
 - **Module `agents/`** : un graphe LangGraph a trois noeuds — decider, executer,
