@@ -73,3 +73,46 @@ class QueryResponse(BaseModel):
     sources: list[SourceRef] = Field(
         description="Extraits reellement recuperes, du plus pertinent au moins pertinent."
     )
+
+
+class AgentResponse(BaseModel):
+    """Reponse de l'agent, avec de quoi la verifier et comprendre son cheminement.
+
+    Les sources sont ici de simples chaines, sans score, la ou `/query` renvoie
+    un score par extrait. Ce n'est pas un oubli : l'agent peut citer des
+    provenances qui ne viennent pas d'une recherche vectorielle — la fiche
+    publique d'une CVE, par exemple — et un score de similarite n'y aurait
+    aucun sens.
+    """
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "answer": (
+                    "La CVE-2021-44228 (Log4Shell) permet l'execution de code a distance "
+                    "via une requete JNDI dans un message journalise. Sa gravite CVSS est "
+                    "de 10/10. Le corpus la rattache a la categorie « supply chain » du "
+                    "OWASP LLM Top 10."
+                ),
+                "sources": [
+                    "https://nvd.nist.gov/vuln/detail/CVE-2021-44228",
+                    "owasp-llm-top10.md",
+                ],
+                "iterations": 2,
+            }
+        }
+    )
+
+    answer: str = Field(description="Reponse finale, apres d'eventuels appels d'outils.")
+    sources: list[str] = Field(
+        description=(
+            "Provenances citees par les outils reellement executes. Une liste vide "
+            "signifie que l'agent a repondu sans consulter aucune source."
+        )
+    )
+    iterations: int = Field(
+        description=(
+            "Nombre de tours d'outils effectues. Zero signifie que le modele a repondu "
+            "directement, sans rien consulter."
+        )
+    )

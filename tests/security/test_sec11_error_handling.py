@@ -11,11 +11,13 @@ serveur et les versions installees — c'est du travail de reconnaissance offert
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any, cast
 
 import pytest
 from fastapi.testclient import TestClient
 
+from aisecassist.agents.service import AgentService
 from aisecassist.api.deps import Services, get_services
 from aisecassist.generation.service import GenerationService
 from aisecassist.llm.base import LLMError
@@ -26,7 +28,9 @@ from tests.doubles import (
     ExplodingLLM,
     ExplodingVectorStore,
     FakeLLM,
+    FakeTool,
     FakeVectorStore,
+    SlowChatLLM,
     StreamingLLM,
     extrait,
     make_generation,
@@ -47,12 +51,18 @@ _FUITES = (
 )
 
 
-def _services(retrieval: RetrievalService, generation: GenerationService) -> Services:
+def _services(
+    retrieval: RetrievalService,
+    generation: GenerationService,
+    agent: AgentService | None = None,
+) -> Services:
     return Services(
         retrieval=retrieval,
         generation=generation,
+        agent=agent if agent is not None else cast(Any, None),
         store=cast(Any, None),
         llm=cast(Any, None),
+        cve=cast(Any, None),
     )
 
 
@@ -317,3 +327,32 @@ def test_une_panne_de_recherche_sur_le_flux_donne_un_503_avant_ouverture() -> No
 
     assert reponse.status_code == 503
     _assert_sans_fuite(reponse.text)
+
+
+def test_un_agent_interrompu_ne_fuit_rien(caplog: pytest.LogCaptureFixture) -> None:
+    """Le 504 est un chemin d'erreur de plus, donc une occasion de fuite de plus.
+
+    Le budget de temps est une valeur de configuration : l'annoncer au client
+    lui apprendrait combien de temps il peut faire travailler le serveur avant
+    d'etre coupe. Le message reste donc qualitatif, et la duree part dans les
+    logs.
+    """
+    agent = AgentService(
+        SlowChatLLM(delai_s=30.0),
+        [FakeTool()],
+        max_iterations=3,
+        max_answer_chars=8_000,
+        timeout_s=0.05,
+    )
+    client = _client(_services(cast(Any, None), cast(Any, None), agent=agent))
+
+    with caplog.at_level(logging.WARNING):
+        reponse = client.post("/agent", json={"question": "question interminable"})
+
+    assert reponse.status_code == 504
+    corps = reponse.text
+    for marqueur in _FUITES:
+        assert marqueur not in corps
+    assert "0.05" not in corps and "timeout" not in corps.lower()
+    # La duree, elle, doit etre exploitable cote serveur.
+    assert "0 s" in caplog.text or "epuise" in caplog.text

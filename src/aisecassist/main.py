@@ -10,9 +10,15 @@ from importlib.metadata import PackageNotFoundError, version
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from aisecassist.agents.service import AgentTimeoutError
+from aisecassist.api.agent import router as agent_router
 from aisecassist.api.deps import build_services, close_services
 from aisecassist.api.health import router as health_router
-from aisecassist.api.messages import MESSAGE_INATTENDU, MESSAGE_INDISPONIBLE
+from aisecassist.api.messages import (
+    MESSAGE_AGENT_TROP_LONG,
+    MESSAGE_INATTENDU,
+    MESSAGE_INDISPONIBLE,
+)
 from aisecassist.api.query import router as query_router
 from aisecassist.config import settings
 from aisecassist.embeddings.base import EmbedderError
@@ -46,24 +52,45 @@ similarite. Une reponse de securite qu'on ne peut pas verifier n'est pas
 utilisable : si le corpus ne contient pas de quoi repondre, le service le dit
 explicitement au lieu de supposer.
 
-### Deux facons d'interroger
+### Trois facons d'interroger
 
 - `POST /query` renvoie la reponse complete en une fois.
 - `POST /query/stream` la renvoie au fil de la generation. Sur un modele local,
   le premier texte apparait en environ deux secondes contre une vingtaine pour
   la reponse complete.
+- `POST /agent` laisse le modele **choisir ses outils** : chercher dans le
+  corpus, consulter une CVE dans la base du NIST, recommencer si besoin. Plus
+  pertinent sur une question qui croise plusieurs sources, nettement plus lent
+  sur une question simple.
+
+### Quand utiliser l'agent plutot que /query
+
+`/query` cherche toujours, une fois, puis redige : c'est le bon choix par
+defaut. L'agent vaut son cout quand la question demande de croiser des sources
+— « cette CVE releve-t-elle d'une categorie du OWASP LLM Top 10 ? » — ou quand
+une premiere recherche peut en appeler une seconde. Le champ `iterations` de sa
+reponse dit combien d'etapes ont reellement eu lieu.
 
 ### Gestion des erreurs
 
 Une entree invalide donne un **422** decrivant le champ fautif. Une panne de
 dependance donne un **503** volontairement generique : le detail technique part
-dans les logs du serveur, jamais dans la reponse.
+dans les logs du serveur, jamais dans la reponse. Un agent qui depasse son
+budget de temps donne un **504** — rien n'est casse, le cheminement a ete trop
+long.
 """
 
 _TAGS = [
     {
         "name": "rag",
         "description": "Interrogation du corpus. Toute reponse est sourcee.",
+    },
+    {
+        "name": "agent",
+        "description": (
+            "Interrogation par un agent qui choisit ses outils. Les outils "
+            "autorises sont fixes par le code, jamais par la question."
+        ),
     },
     {
         "name": "monitoring",
@@ -91,6 +118,7 @@ app = FastAPI(
 )
 app.include_router(health_router)
 app.include_router(query_router)
+app.include_router(agent_router)
 
 
 @app.exception_handler(LLMError)
@@ -105,6 +133,18 @@ async def dependance_indisponible(request: Request, exc: Exception) -> JSONRespo
     """
     logger.warning("Dependance indisponible sur %s : %s", request.url.path, exc)
     return JSONResponse(status_code=503, content={"detail": MESSAGE_INDISPONIBLE})
+
+
+@app.exception_handler(AgentTimeoutError)
+async def agent_trop_long(request: Request, exc: Exception) -> JSONResponse:
+    """Budget de temps de l'agent epuise : 504, et non 503.
+
+    La distinction n'est pas cosmetique. Un 503 dit « le service est en panne,
+    reessaie a l'identique » ; un 504 dit « la demande a ete trop longue a
+    traiter ». Reessayer la meme question ne sert a rien, la reformuler si.
+    """
+    logger.warning("Agent interrompu sur %s : %s", request.url.path, exc)
+    return JSONResponse(status_code=504, content={"detail": MESSAGE_AGENT_TROP_LONG})
 
 
 @app.exception_handler(Exception)

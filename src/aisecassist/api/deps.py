@@ -12,6 +12,9 @@ from typing import cast
 
 from fastapi import Request
 
+from aisecassist.agents.cve import CveLookupTool
+from aisecassist.agents.service import AgentService
+from aisecassist.agents.tools import CorpusSearchTool
 from aisecassist.config import settings
 from aisecassist.embeddings.sentence_transformer import SentenceTransformerEmbedder
 from aisecassist.generation.service import GenerationService
@@ -26,10 +29,12 @@ class Services:
 
     retrieval: RetrievalService
     generation: GenerationService
+    agent: AgentService
     # Conserves pour pouvoir fermer leurs clients a l'arret ; les routes ne les
-    # utilisent pas directement, elles passent par les deux services ci-dessus.
+    # utilisent pas directement, elles passent par les services ci-dessus.
     store: QdrantVectorStore
     llm: OllamaProvider
+    cve: CveLookupTool
 
 
 def build_services() -> Services:
@@ -49,17 +54,36 @@ def build_services() -> Services:
         model=settings.ollama_model,
         timeout_s=settings.llm_timeout_s,
     )
+    cve = CveLookupTool(
+        base_url=settings.nvd_base_url,
+        timeout_s=settings.nvd_timeout_s,
+        api_key=settings.nvd_api_key,
+        description_max_chars=settings.cve_description_max_chars,
+    )
+    retrieval = RetrievalService(
+        embedder,
+        store,
+        settings.retrieval_top_k,
+        min_score=settings.retrieval_min_score,
+    )
 
     return Services(
-        retrieval=RetrievalService(
-            embedder,
-            store,
-            settings.retrieval_top_k,
-            min_score=settings.retrieval_min_score,
-        ),
+        retrieval=retrieval,
         generation=GenerationService(llm, max_answer_chars=settings.max_answer_chars),
+        # Le meme fournisseur que la generation : un seul client HTTP vers
+        # Ollama, donc un seul endroit ou regler les delais et lire les erreurs.
+        # Ce qui borne l'agent n'est pas le delai par appel mais son budget
+        # total, porte par le service lui-meme.
+        agent=AgentService(
+            llm,
+            [CorpusSearchTool(retrieval), cve],
+            max_iterations=settings.agent_max_iterations,
+            max_answer_chars=settings.max_answer_chars,
+            timeout_s=settings.agent_timeout_s,
+        ),
         store=store,
         llm=llm,
+        cve=cve,
     )
 
 
@@ -67,6 +91,7 @@ async def close_services(services: Services) -> None:
     """Ferme les clients detenus par les services."""
     await services.store.aclose()
     await services.llm.aclose()
+    await services.cve.aclose()
 
 
 def get_services(request: Request) -> Services:

@@ -13,7 +13,7 @@ import pytest
 
 from aisecassist.main import app
 
-_ROUTES_PUBLIQUES = ["/query", "/query/stream"]
+_ROUTES_PUBLIQUES = ["/query", "/query/stream", "/agent"]
 
 
 @pytest.fixture(scope="module")
@@ -34,7 +34,7 @@ def test_les_metadonnees_sont_renseignees(schema: dict) -> None:
 def test_les_tags_sont_decrits(schema: dict) -> None:
     tags = {t["name"]: t["description"] for t in schema["tags"]}
 
-    assert set(tags) == {"rag", "monitoring"}
+    assert set(tags) == {"rag", "agent", "monitoring"}
     assert all(description.strip() for description in tags.values())
 
 

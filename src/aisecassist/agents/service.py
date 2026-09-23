@@ -16,6 +16,9 @@ quels arguments, et quand il a assez d'elements.
   indefiniment : c'est un deni de service qu'on s'inflige, et la facture avec
   (SEC-06, SEC-10).
 - Le nombre d'appels traites par tour, pour la meme raison.
+- Le budget de temps total. Les deux plafonds precedents bornent le *nombre*
+  d'etapes, jamais leur duree : un seul appel qui traine les rend inoperants.
+  C'est le seul plafond qui tienne quoi que fasse le modele (ticket 21).
 - Le plafond de longueur et le guardrail de sortie sur la reponse finale, les
   memes que `/query` : un agent ne doit pas devenir un contournement des
   barrieres de l'autre porte (SEC-02, SEC-10).
@@ -34,11 +37,12 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, TypedDict
 
+import anyio
 from langgraph.graph import END, StateGraph
 
 from aisecassist.agents.tools import Tool, ToolArgumentError, ToolResult
 from aisecassist.llm.base import ChatMessage, ToolCall, ToolCallingProvider, ToolSpec
-from aisecassist.security.limits import plafonner
+from aisecassist.security.limits import MAX_QUESTION_LENGTH, plafonner
 from aisecassist.security.output_guardrail import redact
 from aisecassist.security.prompt_sanitation import neutralize_markers
 
@@ -79,6 +83,16 @@ class AgentError(RuntimeError):
     """Echec de l'agent avant tout appel au modele."""
 
 
+class AgentTimeoutError(RuntimeError):
+    """Le budget de temps de l'agent est epuise.
+
+    Distincte d'une panne : rien n'est casse, l'agent n'a simplement pas abouti
+    dans le temps imparti. La couche API la traduit en 504, la ou une
+    dependance injoignable donne un 503 — un client qui reessaie n'a pas le
+    meme interet dans les deux cas.
+    """
+
+
 @dataclass(frozen=True, slots=True)
 class AgentAnswer:
     """Reponse de l'agent, avec de quoi la verifier et la comprendre."""
@@ -109,6 +123,7 @@ class AgentService:
         *,
         max_iterations: int,
         max_answer_chars: int,
+        timeout_s: float,
     ) -> None:
         if not tools:
             # Un agent sans outil n'est plus un agent : c'est un modele qui
@@ -122,18 +137,25 @@ class AgentService:
         self._specs: tuple[ToolSpec, ...] = tuple(tool.spec for tool in tools)
         self._max_iterations = max_iterations
         self._max_answer_chars = max_answer_chars
+        self._timeout_s = timeout_s
         self._graphe = self._construire_graphe()
 
     async def answer(self, question: str) -> AgentAnswer:
         """Repond a une question en s'aidant des outils autorises.
 
         Raises:
-            AgentError: la question est vide.
+            AgentError: la question est vide ou depasse le plafond de longueur.
+            AgentTimeoutError: le budget de temps est epuise.
             LLMError: le fournisseur est injoignable ou en erreur.
             RetrievalError, VectorStoreError, EmbedderError: panne d'un outil.
         """
         if not question.strip():
             raise AgentError("La question est vide.")
+        # Le meme plafond que le schema de l'API, applique ici aussi : le
+        # service est une porte a part entiere, et un plafond qui ne couvre
+        # qu'une des deux portes n'est pas un plafond (SEC-10).
+        if len(question) > MAX_QUESTION_LENGTH:
+            raise AgentError(f"La question depasse {MAX_QUESTION_LENGTH} caracteres.")
 
         etat_initial: EtatAgent = {
             "messages": [
@@ -145,7 +167,18 @@ class AgentService:
             "reponse": "",
             "iterations": 0,
         }
-        final: dict[str, Any] = await self._graphe.ainvoke(etat_initial)
+        try:
+            with anyio.fail_after(self._timeout_s):
+                final: dict[str, Any] = await self._graphe.ainvoke(etat_initial)
+        except TimeoutError as exc:
+            # Rien n'est recuperable : l'etat partiel vit dans le graphe, que
+            # l'annulation defait. Mieux vaut un echec net qu'une reponse
+            # tronquee dont personne ne saurait qu'elle est incomplete.
+            logger.warning(
+                "Budget de temps de l'agent epuise apres %.0f s : execution abandonnee.",
+                self._timeout_s,
+            )
+            raise AgentTimeoutError("Budget de temps epuise.") from exc
 
         texte = str(final["reponse"]).strip() or MESSAGE_SANS_REPONSE
         plafonne, tronque = plafonner(texte, self._max_answer_chars)

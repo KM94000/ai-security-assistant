@@ -11,6 +11,8 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Mapping, Sequence
 from typing import Any
 
+import anyio
+
 from aisecassist.agents.tools import Tool, ToolResult
 from aisecassist.embeddings.base import Embedder
 from aisecassist.generation.service import GenerationService
@@ -232,3 +234,39 @@ class FakeTool(Tool):
     async def run(self, arguments: Mapping[str, Any]) -> ToolResult:
         self.arguments_recus.append(dict(arguments))
         return ToolResult(observation=self._observation, sources=self._sources)
+
+
+class ExplodingChatLLM(ToolCallingProvider):
+    """Leve l'erreur fournie des le premier tour de l'agent."""
+
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    async def chat(
+        self,
+        messages: Sequence[ChatMessage],
+        tools: Sequence[ToolSpec],
+    ) -> ChatReply:
+        raise self._error
+
+
+class SlowChatLLM(ToolCallingProvider):
+    """Modele qui ne repond jamais assez vite.
+
+    Reproduit le seul cas que les plafonds de comptage ne couvrent pas : un
+    appel unique qui traine. Le plafond d'iterations ne s'en apercoit pas — il
+    n'y a qu'une iteration — d'ou le budget de temps.
+    """
+
+    def __init__(self, delai_s: float = 30.0) -> None:
+        self._delai_s = delai_s
+        self.appels = 0
+
+    async def chat(
+        self,
+        messages: Sequence[ChatMessage],
+        tools: Sequence[ToolSpec],
+    ) -> ChatReply:
+        self.appels += 1
+        await anyio.sleep(self._delai_s)
+        return ChatReply(text="trop tard")  # pragma: no cover - jamais atteint

@@ -125,6 +125,7 @@ def _interroger(collection: str, question: str) -> AgentAnswer:
                 [CorpusSearchTool(retrieval), cve],
                 max_iterations=settings.agent_max_iterations,
                 max_answer_chars=settings.max_answer_chars,
+                timeout_s=_DELAI_AGENT_S,
             )
             return await agent.answer(question)
 

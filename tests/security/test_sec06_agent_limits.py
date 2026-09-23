@@ -21,12 +21,14 @@ from aisecassist.agents.cve import CveLookupTool
 from aisecassist.agents.service import (
     APPELS_MAX_PAR_TOUR,
     MESSAGE_PLAFOND,
+    AgentError,
     AgentService,
+    AgentTimeoutError,
 )
 from aisecassist.llm.base import ChatReply, ToolCall
-from aisecassist.security.limits import MARQUEUR_TRONCATURE
+from aisecassist.security.limits import MARQUEUR_TRONCATURE, MAX_QUESTION_LENGTH
 from aisecassist.security.output_guardrail import REMPLACEMENT
-from tests.doubles import FakeTool, ScriptedChatLLM
+from tests.doubles import FakeTool, ScriptedChatLLM, SlowChatLLM
 
 pytestmark = pytest.mark.anyio
 
@@ -43,6 +45,7 @@ def _agent(
         [outil or FakeTool()],
         max_iterations=max_iterations,
         max_answer_chars=max_answer_chars,
+        timeout_s=5.0,
     )
 
 
@@ -249,6 +252,7 @@ async def test_le_nombre_dappels_sortants_reste_plafonne() -> None:
         [outil],
         max_iterations=1,
         max_answer_chars=8_000,
+        timeout_s=5.0,
     )
 
     await service.answer("Plusieurs CVE d'un coup ?")
@@ -278,3 +282,44 @@ async def test_la_cle_dapi_napparait_jamais_dans_les_logs(
 
     assert "CVE-2021-44228" in caplog.text
     assert cle not in caplog.text
+
+
+async def test_le_budget_de_temps_coupe_un_modele_qui_traine() -> None:
+    """Le plafond que les deux autres ne remplacent pas (SEC-10, ticket 21).
+
+    Le plafond d'iterations et celui d'appels par tour comptent des etapes. Ils
+    ne voient rien d'un appel unique qui ne revient jamais : il n'y a qu'une
+    iteration, et un seul appel. Sans budget de temps, la requete resterait
+    ouverte aussi longtemps que le modele le voudrait — et autant de connexions
+    avec elle.
+    """
+    lent = SlowChatLLM(delai_s=30.0)
+    service = AgentService(
+        lent,
+        [FakeTool()],
+        max_iterations=3,
+        max_answer_chars=8_000,
+        timeout_s=0.05,
+    )
+
+    with pytest.raises(AgentTimeoutError):
+        await service.answer("question")
+
+    # L'appel a bien commence : ce n'est pas un refus anticipe, c'est une coupe.
+    assert lent.appels == 1
+
+
+async def test_une_question_trop_longue_est_refusee_par_le_service() -> None:
+    """Le plafond de l'API, applique aussi dans le service (SEC-10).
+
+    Le schema HTTP le refuserait deja. Mais le service est une porte a part
+    entiere — un futur appelant interne, un travail planifie — et un plafond
+    qui ne couvre qu'une des deux portes n'est pas un plafond.
+    """
+    llm = ScriptedChatLLM([ChatReply(text="ne devrait pas etre appele")])
+    service = _agent(llm)
+
+    with pytest.raises(AgentError):
+        await service.answer("x" * (MAX_QUESTION_LENGTH + 1))
+
+    assert llm.appels == 0
