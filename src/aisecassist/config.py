@@ -125,6 +125,13 @@ class Settings(BaseSettings):
     # c'est du texte tiers : sa taille n'est pas sous notre contrôle.
     cve_description_max_chars: int = Field(default=1_500, gt=0)
 
+    # --- Observabilité (ticket 23, ADR-0014) ---
+    log_level: str = "INFO"
+    # JSON par défaut : c'est ce qu'attend un agrégateur de logs, et c'est le
+    # format dans lequel un `request_id` devient exploitable. Mettre à `false`
+    # en développement donne une sortie lisible à l'œil.
+    log_json: bool = True
+
     # --- Generation ---
     # Plafond de longueur d'une reponse (SEC-10). En streaming surtout : une
     # generation qui part en boucle produirait des fragments indefiniment, et

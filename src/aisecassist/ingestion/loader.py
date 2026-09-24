@@ -3,6 +3,17 @@
 Le corpus est une entree hostile differee : un document empoisonne n'agit pas a
 l'ingestion mais au moment ou il est recupere (SECURITY.md, frontiere 5). Ce
 module est la premiere barriere — il decide de ce qui a le droit d'entrer.
+
+**Volontairement synchrone**, alors que `read_text` bloque et que l'appelant,
+lui, est asynchrone. La vectorisation prend le traitement inverse : elle est
+deportee dans un fil par `anyio.to_thread.run_sync`. L'asymetrie est assumee —
+une lecture locale plafonnee a `max_document_bytes` coute des millisecondes, une
+vectorisation plusieurs secondes, et l'ingestion est un traitement par lots
+lance en ligne de commande : aucune requete concurrente a affamer.
+
+**La condition qui invaliderait ce choix** : que l'ingestion soit un jour
+declenchee par une route HTTP. La lecture se retrouverait alors sur le chemin
+des requetes, et devrait etre deportee comme la vectorisation.
 """
 
 from __future__ import annotations

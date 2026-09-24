@@ -21,6 +21,10 @@ dependencies = [
     # Utilise directement pour deporter la vectorisation hors de la boucle
     # d'evenements. Arrive aussi via starlette, mais un import direct se declare.
     "anyio>=4.0",
+    # Logs structures (ticket 23, ADR-0014). Choisi pour son integration avec le
+    # module `logging` standard : les appels existants traversent la meme chaine
+    # de traitement sans etre reecrits, et les bibliotheques tierces aussi.
+    "structlog>=24.1",
     # Embeddings locaux (ADR-0006). Tire torch : environ 200 Mo de wheel.
     # Plancher a 5.7 : version ou l'on s'appuie sur get_embedding_dimension
     # plutot que sur son alias deprecie. Verifie en 5.7 et en 6.0.

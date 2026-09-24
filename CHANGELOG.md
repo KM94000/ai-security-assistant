@@ -1,5 +1,44 @@
 # Changelog
 
+## [Non publie] - M4, ticket 23 : logs structures et identifiant de requete
+### Ajoute
+- **Module `observability/`** : configuration des logs structures et intergiciel
+  d'identifiant de requete.
+- **Chaque requete porte un identifiant**, repris de l'en-tete `X-Request-ID`
+  s'il est bien forme, attribue sinon, et **renvoye au client** dans l'en-tete de
+  reponse — de quoi citer une requete precise en signalant une panne.
+- `LOG_LEVEL` et `LOG_JSON` en configuration.
+- ADR-0014.
+
+### Le parti pris
+- **Aucun des vingt-cinq appels `logging` existants n'a ete reecrit.** structlog
+  est branche en aval du module standard : les appels du projet comme ceux des
+  bibliotheques tierces traversent la meme chaine et ressortent au meme format,
+  horodates, avec leur module d'origine et l'identifiant de requete.
+- L'identifiant voyage par variable de contexte, jamais en parametre : le passer
+  de fonction en fonction aurait modifie toute la chaine d'appel, jusqu'aux
+  doubles de test.
+- L'intergiciel est ecrit a la main plutot qu'avec `BaseHTTPMiddleware`, qui
+  execute la suite dans une tache distincte et casserait cette propagation.
+
+### Securite
+- **SEC-12 passe a partiel.** Ni question d'utilisateur, ni contenu de document,
+  ni cle de fournisseur n'atteint une ligne de journal. Les arguments d'outil
+  sont traces par leurs cles, jamais par leurs valeurs.
+- **Injection de logs couverte** : un `X-Request-ID` client est valide contre une
+  forme stricte. Sans cela, un saut de ligne suffirait a fabriquer une ligne de
+  journal entiere, qu'un agregateur lirait comme un evenement authentique — de
+  quoi masquer une intrusion sous un faux « connexion reussie ». Une valeur
+  demesuree est ecartee de la meme facon.
+- Verifie **par mutation** : desactiver la validation fait rougir neuf tests.
+- Le volet **traces** de SEC-12 reste ouvert : il suppose que des traces
+  existent, donc le ticket 24.
+
+### Teste
+- 22 tests unitaires, dont la propriete centrale : un appel `logging` inchange
+  ressort en JSON et porte l'identifiant de la requete en cours.
+- 8 tests de securite SEC-12.
+
 ## [Non publie] - Ticket 26 : un second fournisseur de modele, pour verifier que l'abstraction tient
 ### Ajoute
 - **`OpenAICompatibleProvider`** : une seule implementation pour Groq, OpenAI,
