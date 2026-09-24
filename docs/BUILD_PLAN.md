@@ -106,9 +106,15 @@ FS hors périmètre (SEC-06). Les appels d'outils sont tracés (qui, quoi, args)
 | # | Ticket | Critère d'acceptation | Sécu |
 |---|---|---|---|
 | 26 ✅ | **Fournisseur hébergé compatible OpenAI** — ADR-0013 | le même code répond via Groq comme via Ollama | SEC-02, SEC-12 |
-| 23 | Logs structurés + `request_id` | chaque requête corrélable de bout en bout | SEC-12 |
+| 23 ✅ | Logs structurés + `request_id` — ADR-0014 | chaque requête corrélable de bout en bout | SEC-12 |
 | 24 | Tracing Langfuse | une requête RAG/agent apparaît dans Langfuse | SEC-12 |
-| 25 | Métriques tokens / coût / latence | exposées par requête | SEC-10 |
+| 25 ⏸ | Métriques tokens / coût / latence | exposées par requête | SEC-10 |
+
+> Le ticket 25 est **reporté après M5**, décidé le 2026-09-24. Les métriques
+> de consommation supposent un trafic à mesurer, qui n'existe pas encore ; et
+> c'est le seul des trois qui change un type partagé (`ChatReply` gagnerait un
+> champ `usage`). Le faire plus tard, informé par les campagnes de M5, vaut
+> mieux que le concevoir contre des besoins supposés.
 
 > Le ticket 26 ne figurait pas au plan. Il a été inséré ici, **avant** les
 > tickets d'observabilité, parce que M5 et M6 en dépendent : le premier rejoue

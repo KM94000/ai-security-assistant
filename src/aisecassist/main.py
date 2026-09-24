@@ -23,6 +23,8 @@ from aisecassist.api.query import router as query_router
 from aisecassist.config import settings
 from aisecassist.embeddings.base import EmbedderError
 from aisecassist.llm.base import LLMError
+from aisecassist.observability.logging import configure_logging
+from aisecassist.observability.request_id import RequestIdMiddleware
 from aisecassist.retrieval.service import RetrievalError
 from aisecassist.vectorstore.base import VectorStoreError
 
@@ -102,6 +104,15 @@ _TAGS = [
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Cree les services au demarrage et ferme leurs clients a l'arret."""
+    # Avant toute chose : sans cela, les messages emis pendant la construction
+    # des services — chargement du modele, choix du fournisseur — partiraient
+    # dans la configuration par defaut de `logging`, donc nulle part.
+    configure_logging(level=settings.log_level, json_format=settings.log_json)
+    logger.info(
+        "Demarrage de l'application.",
+        extra={"environment": settings.environment, "llm_provider": settings.llm_provider},
+    )
+
     app.state.services = build_services()
     try:
         yield
@@ -116,6 +127,10 @@ app = FastAPI(
     openapi_tags=_TAGS,
     lifespan=lifespan,
 )
+# Pose l'identifiant de requete avant tout le reste : les gestionnaires
+# d'exception journalisent, et doivent le faire sous le bon identifiant.
+app.add_middleware(RequestIdMiddleware)
+
 app.include_router(health_router)
 app.include_router(query_router)
 app.include_router(agent_router)
