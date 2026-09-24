@@ -162,16 +162,28 @@ def _outil_cve(handler: CveHandler | None = None) -> tuple[CveLookupTool, list[h
 @pytest.mark.parametrize(
     "charge",
     [
+        # Charges longues : ecartees par le plafond de longueur du champ.
         "CVE-2021-44228; rm -rf /",
         "CVE-2021-44228 && curl attaquant.example",
         "CVE-2021-44228&resultsPerPage=2000",
         "CVE-2021-44228/../../../etc/passwd",
         "http://attaquant.example/CVE-2021-44228",
-        "../../etc/passwd",
-        "CVE-20211-44228",
+        # Charge trop courte : meme plafond, autre borne.
         "CVE-2021-442",
         "$(whoami)",
         "",
+        # Charges de longueur VALIDE (13 a 16 caracteres) : seule l'expression
+        # reguliere les arrete. Sans elles, ce jeu de tests donnerait une
+        # illusion de couverture — une campagne de mutation a montre que le
+        # plafond de longueur interceptait la quasi-totalite des precedentes.
+        "../../etc/pass",
+        "CVE-20211-44228",
+        "CVE-2021+44228",
+        "CVE 2021 44228",
+        "CVE-2021-4422;",
+        "%2e%2e%2fetc%2",
+        "CVE-2021-442#a",
+        "..%2f..%2fetc1",
     ],
 )
 async def test_un_identifiant_non_conforme_nemet_aucune_requete(charge: str) -> None:
@@ -180,6 +192,13 @@ async def test_un_identifiant_non_conforme_nemet_aucune_requete(charge: str) -> 
     Verifier que l'appel est refuse ne suffit pas — il faut verifier qu'**aucune
     requete n'est partie**. C'est cette propriete, et elle seule, qui interdit a
     un modele detourne de se servir du serveur pour joindre un tiers.
+
+    Le jeu de charges est **volontairement scinde en deux**. Les premieres sont
+    hors des bornes de longueur du champ, donc arretees avant meme l'expression
+    reguliere ; les secondes tiennent dans ces bornes et ne peuvent etre
+    arretees que par elle. Sans ce second groupe, desactiver l'expression
+    reguliere ne ferait presque rien rougir, et le test n'aurait teste que le
+    plafond de longueur en croyant tester le format.
     """
     outil, emises = _outil_cve()
 
