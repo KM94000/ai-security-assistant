@@ -36,6 +36,7 @@ from aisecassist.agents.service import AgentService
 from aisecassist.api.deps import Services, get_services
 from aisecassist.llm.base import ChatReply, ToolCall
 from aisecassist.main import app
+from aisecassist.observability import tracing
 from aisecassist.observability.logging import configure_logging
 from aisecassist.observability.request_id import EN_TETE
 from tests.doubles import (
@@ -51,6 +52,19 @@ from tests.doubles import (
 # Valeurs qui ne doivent JAMAIS apparaitre dans une ligne de journal.
 _CLE_FOURNISSEUR = "gsk_ClefDeFournisseurQuiNeDoitPasFuiter1234"
 _QUESTION_SENSIBLE = "Le mot de passe du compte admin-prod est Hunter2, est-ce un risque ?"
+
+
+class _SpanFactice:
+    """Double minimal d'une etape tracee."""
+
+    def update(self, **valeurs: Any) -> None:
+        return None
+
+    def __enter__(self) -> _SpanFactice:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        return None
 
 
 @pytest.fixture
@@ -241,3 +255,77 @@ def test_aucune_ligne_ne_porte_lidentifiant_de_la_requete_precedente(
     client.post("/query", json={"question": "seconde"}, headers={EN_TETE: "trace-deux"})
 
     assert "trace-un" not in journal.getvalue()[debut:]
+
+
+# --- 4. Les traces : une seconde sortie, un autre arbitrage ------------------
+#
+# Une trace contient DELIBEREMENT ce que les logs excluent : la question et les
+# extraits recuperes. Sans ce contenu, elle ne servirait a rien. L'arbitrage est
+# assume (ADR-0015), et les deux tests ci-dessous le figent — pour qu'il reste
+# un choix documente et non une derive.
+
+
+def test_la_question_est_absente_des_logs_mais_presente_dans_la_trace(
+    journal: io.StringIO,
+) -> None:
+    """La difference entre les deux destinations, ecrite noir sur blanc.
+
+    Les logs partent vers un agregateur, sont conserves longtemps et lus
+    largement. Une trace vit dans un systeme dedie, auto-heberge, prevu pour ce
+    contenu. Ce test echouera si quelqu'un aligne l'un sur l'autre — dans un
+    sens comme dans l'autre.
+    """
+    vues: list[dict[str, Any]] = []
+
+    class ClientFactice:
+        def start_as_current_observation(self, **kwargs: Any) -> Any:
+            vues.append(kwargs)
+            return _SpanFactice()
+
+    tracing._client = ClientFactice()
+    try:
+        _client(_services()).post("/query", json={"question": _QUESTION_SENSIBLE})
+    finally:
+        tracing._client = None
+
+    assert "Hunter2" not in journal.getvalue(), "la question ne doit pas etre journalisee"
+    tracees = [v["input"].get("question", "") for v in vues if "question" in v.get("input", {})]
+    assert any("Hunter2" in q for q in tracees), "la trace, elle, doit la porter"
+
+
+def test_un_secret_natteint_jamais_la_trace(journal: io.StringIO) -> None:
+    """Le contenu utile passe, les secrets non. C'est la ligne de partage."""
+    faux_secret = "sk-" + "a1b2c3d4" * 4
+    vues: list[dict[str, Any]] = []
+
+    class SpanQuiEnregistre:
+        def update(self, **valeurs: Any) -> None:
+            vues.append(valeurs)
+
+        def __enter__(self) -> Any:
+            return self
+
+        def __exit__(self, *exc: object) -> None:
+            return None
+
+    class ClientFactice:
+        def start_as_current_observation(self, **kwargs: Any) -> Any:
+            return SpanQuiEnregistre()
+
+    services = Services(
+        retrieval=make_retrieval(FakeVectorStore([extrait("contenu")])),
+        generation=make_generation(FakeLLM(f"La cle est {faux_secret}")),
+        agent=cast(Any, None),
+        store=cast(Any, None),
+        llm=cast(Any, None),
+        cve=cast(Any, None),
+    )
+
+    tracing._client = ClientFactice()
+    try:
+        _client(services).post("/query", json={"question": "question"})
+    finally:
+        tracing._client = None
+
+    assert vues, "aucune sortie tracee : le test ne prouverait rien"
+    assert all(faux_secret not in str(v) for v in vues)

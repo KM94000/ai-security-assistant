@@ -25,6 +25,7 @@ from aisecassist.embeddings.base import EmbedderError
 from aisecassist.llm.base import LLMError
 from aisecassist.observability.logging import configure_logging
 from aisecassist.observability.request_id import RequestIdMiddleware
+from aisecassist.observability.tracing import configure_tracing, shutdown_tracing
 from aisecassist.retrieval.service import RetrievalError
 from aisecassist.vectorstore.base import VectorStoreError
 
@@ -113,11 +114,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         extra={"environment": settings.environment, "llm_provider": settings.llm_provider},
     )
 
+    configure_tracing(
+        enabled=settings.langfuse_enabled,
+        host=settings.langfuse_host,
+        public_key=settings.langfuse_public_key,
+        secret_key=settings.langfuse_secret_key,
+    )
+
     app.state.services = build_services()
     try:
         yield
     finally:
         await close_services(app.state.services)
+        # Vide la file d'envoi : sans cela, les traces des dernieres requetes
+        # seraient perdues a l'arret.
+        shutdown_tracing()
 
 
 app = FastAPI(

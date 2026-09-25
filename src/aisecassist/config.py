@@ -132,6 +132,18 @@ class Settings(BaseSettings):
     # en développement donne une sortie lisible à l'œil.
     log_json: bool = True
 
+    # --- Traçage Langfuse (ticket 24, ADR-0015) ---
+    # Désactivé par défaut : la CI n'a pas d'instance, et le produit doit rester
+    # utilisable hors ligne. L'activer suppose d'avoir démarré les conteneurs
+    # d'observabilité (`docker compose --profile observability up -d`).
+    langfuse_enabled: bool = False
+    # Auto-hébergé : une trace contient la question et les extraits récupérés,
+    # c'est-à-dire exactement ce qu'on tient hors des logs. Le contenu ne doit
+    # pas quitter la machine (ADR-0003, ADR-0015).
+    langfuse_host: str = "http://localhost:3000"
+    langfuse_public_key: str | None = None
+    langfuse_secret_key: str | None = None
+
     # --- Generation ---
     # Plafond de longueur d'une reponse (SEC-10). En streaming surtout : une
     # generation qui part en boucle produirait des fragments indefiniment, et

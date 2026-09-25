@@ -65,6 +65,32 @@ auditable.
   vers le même serveur, et notre abstraction contournée.
 - **Ajouter `chat` à `LLMProvider`.** Écartée : voir ci-dessus.
 
+## Réévaluation du 2026-09-25
+
+L'ADR prévoyait de rouvrir la question « si LangGraph devenait un poids mort ».
+Fait, avant d'ajouter Langfuse — il aurait été absurde d'installer un second SDK
+de traçage à côté du `langsmith` inutilisé que LangGraph entraîne.
+
+**Les mesures.** Douze paquets pour **un seul import** dans tout le code source.
+Deux `Any` dans une base en `mypy --strict`, uniquement pour ce module. Et deux
+tickets consécutifs qui n'en ont tiré aucun bénéfice : le ticket 20 a ajouté un
+second outil sans que le graphe ne change d'une ligne, et le ticket 21 a dû
+implémenter le budget de temps **en dehors** du graphe, qui ne savait pas
+l'exprimer.
+
+**Décision : garder, pour l'instant.** Non par conviction, mais par arbitrage de
+calendrier. Le retrait est faisable — les quatre nœuds survivraient tels quels,
+seule leur orchestration changerait — mais ce serait un troisième écart au plan
+de build en une semaine, et M5 reste le jalon qui valide le titre du projet.
+`langsmith` est par ailleurs inerte tant qu'aucune variable d'environnement ne
+l'active : le coût est une surface de chaîne d'approvisionnement, pas un
+comportement.
+
+**À reprendre en M6**, avec la revue des dépendances et `uv lock`. Critère fixé
+d'avance : remplacer le graphe par une boucle et vérifier que les tests passent
+**sans modification**. S'il faut en retoucher un seul, le graphe apportait
+quelque chose.
+
 ## Conséquences
 
 - (+) Le métier ne connaît que nos types. Changer de fournisseur ou de framework

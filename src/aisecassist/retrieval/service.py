@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 
 from aisecassist.embeddings.base import Embedder
+from aisecassist.observability.tracing import traced
 from aisecassist.vectorstore.base import SearchResult, VectorStore
 
 logger = logging.getLogger(__name__)
@@ -72,8 +73,15 @@ class RetrievalService:
         if not vectors:
             raise RetrievalError("La vectorisation de la question n'a produit aucun vecteur.")
 
-        resultats = await self._store.search(vectors[0], limite)
-        pertinents = [resultat for resultat in resultats if resultat.score >= self._min_score]
+        with traced("retrieval", k=limite, seuil=self._min_score) as span:
+            resultats = await self._store.search(vectors[0], limite)
+            pertinents = [resultat for resultat in resultats if resultat.score >= self._min_score]
+            # Les scores sont la donnee la plus utile d'une trace de recherche :
+            # c'est par eux qu'on explique un refus ou un extrait hors sujet.
+            span.sortie(
+                retenus=[{"source": r.source, "score": round(r.score, 4)} for r in pertinents],
+                ecartes=len(resultats) - len(pertinents),
+            )
 
         if resultats and not pertinents:
             # Journalise sans la question, qui peut contenir des donnees sensibles.

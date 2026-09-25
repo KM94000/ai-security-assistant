@@ -107,7 +107,7 @@ FS hors périmètre (SEC-06). Les appels d'outils sont tracés (qui, quoi, args)
 |---|---|---|---|
 | 26 ✅ | **Fournisseur hébergé compatible OpenAI** — ADR-0013 | le même code répond via Groq comme via Ollama | SEC-02, SEC-12 |
 | 23 ✅ | Logs structurés + `request_id` — ADR-0014 | chaque requête corrélable de bout en bout | SEC-12 |
-| 24 | Tracing Langfuse | une requête RAG/agent apparaît dans Langfuse | SEC-12 |
+| 24 ✅ | Tracing Langfuse auto-hébergé — ADR-0015 | une requête RAG/agent apparaît dans Langfuse | SEC-12 |
 | 25 ⏸ | Métriques tokens / coût / latence | exposées par requête | SEC-10 |
 
 > Le ticket 25 est **reporté après M5**, décidé le 2026-09-24. Les métriques
