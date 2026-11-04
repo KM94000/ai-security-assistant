@@ -124,7 +124,10 @@ Client ─HTTP─▶ API FastAPI ─▶ [Sécurité: validation/guardrails/authz
 | `observability/` | logging, tracing, métriques | modifier le comportement |
 
 Tests : `tests/unit/` (isolés) et `tests/integration/` (chaîne complète).
-Évaluation : `eval/` (harness RAGAS + jeux de test).
+Évaluation : `eval/` (harness RAGAS + jeux de test) — **n'existe pas encore**,
+prévu au ticket 34 (M6). La seule mesure de qualité en place aujourd'hui est
+`tests/integration/test_retrieval_relevance.py`, qui rejoue le calibrage du
+seuil de pertinence sur 47 questions (ADR-0010).
 
 ---
 
