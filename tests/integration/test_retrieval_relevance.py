@@ -101,8 +101,49 @@ _CONTROLE_HORS_SUJET = (
     "Quelle est la difference entre un crocodile et un alligator ?",
 )
 
-_COUVERTES = _CALIBRAGE_COUVERTES + _CONTROLE_COUVERTES
-_HORS_SUJET = _CALIBRAGE_HORS_SUJET + _CONTROLE_HORS_SUJET
+# --- Controle etendu, ecrit au ticket 41 -------------------------------------
+#
+# Deux raisons de l'ajouter, et la seconde seule aurait suffi :
+#
+# 1. Le corpus a double de volume et couvre desormais la securite web classique
+#    et MITRE ATT&CK. Le controle d'origine, ecrit pour un corpus de trois
+#    documents, ne touche aucun de ces sujets : il ne verifiait plus la moitie
+#    de ce que le systeme pretend savoir.
+# 2. Le controle d'origine a servi a constater qu'un seuil de 0,65 refusait une
+#    question legitime. L'avoir consulte pour cela le rapproche d'un jeu de
+#    calibrage ; la regle du module impose alors d'en ecrire un nouveau.
+#
+# Celui-ci a ete redige avant toute mesure, et mesure une seule fois.
+_CONTROLE_ETENDU_COUVERTES = (
+    "Pourquoi une requete parametree protege-t-elle mieux qu'un echappement manuel ?",
+    "Qu'est-ce que le mouvement lateral dans une intrusion ?",
+    "En quoi une technique ATT&CK differe-t-elle d'une CVE ?",
+    "Comment eviter qu'un outil d'agent serve de relais vers un service interne ?",
+    "Pourquoi faut-il un budget de temps en plus d'un plafond d'iterations ?",
+    "Que risque-t-on a recopier un en-tete client dans une ligne de journal ?",
+    "Quelle est la difference entre authentification et autorisation ?",
+    "Pourquoi le filtrage des secrets en sortie est-il incomplet par nature ?",
+    "Comment la fonction GOVERN du NIST se distingue-t-elle des trois autres ?",
+    "What is credential access in an intrusion?",
+)
+_CONTROLE_ETENDU_HORS_SUJET = (
+    "Quelle est la meilleure saison pour tailler un rosier ?",
+    "Comment fonctionne un moteur a combustion interne ?",
+    "Donne-moi la liste des capitales d'Amerique du Sud.",
+    "Quel est le classement actuel de la Ligue 1 ?",
+    "Comment apprendre a jouer de la guitare ?",
+    "Quelle est la duree de vie moyenne d'un chat ?",
+    "Explique-moi le theoreme de Pythagore.",
+    "What are the ingredients of a margherita pizza?",
+    "Combien pese la tour Eiffel ?",
+    # Une salutation est conservee a dessein. C'est le cas qui a fait echouer
+    # la separation avant le decoupage par sections : l'ecarter parce qu'il
+    # etait difficile reviendrait a deplacer le poteau de but.
+    "Salut, tu vas bien ?",
+)
+
+_COUVERTES = _CALIBRAGE_COUVERTES + _CONTROLE_COUVERTES + _CONTROLE_ETENDU_COUVERTES
+_HORS_SUJET = _CALIBRAGE_HORS_SUJET + _CONTROLE_HORS_SUJET + _CONTROLE_ETENDU_HORS_SUJET
 
 
 def _embedder() -> SentenceTransformerEmbedder:
