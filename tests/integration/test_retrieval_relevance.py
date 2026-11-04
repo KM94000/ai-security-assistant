@@ -33,7 +33,7 @@ import anyio
 import pytest
 from qdrant_client import AsyncQdrantClient
 
-from aisecassist.config import settings
+from aisecassist.config import Settings, settings
 from aisecassist.embeddings.sentence_transformer import SentenceTransformerEmbedder
 from aisecassist.ingestion.pipeline import IngestionPipeline
 from aisecassist.retrieval.service import RetrievalService
@@ -42,6 +42,23 @@ from aisecassist.vectorstore.qdrant import QdrantVectorStore
 pytestmark = pytest.mark.integration
 
 _CORPUS = Path(__file__).resolve().parents[2] / "data" / "corpus"
+
+# Le seuil **commite**, et non celui que porte le `.env` du poste.
+#
+# Ce module valide une valeur mesuree qui part en production ; la lire depuis
+# l'environnement reviendrait a valider ce que le developpeur a sous la main.
+# Le faux rouge serait benin — un `.env` perime fait echouer sans raison de
+# code. Le faux VERT ne l'est pas : un seuil local plus laxiste declarerait
+# bonne une valeur commitee qui ne separe rien.
+#
+# Les autres reglages restent lus depuis l'environnement : `qdrant_url` doit
+# differer entre un poste et la CI, c'est sa raison d'etre.
+#
+# Troisieme occurrence du meme motif dans ce depot, apres les tests de
+# configuration et le fixture de tracage. La lecon, deja ecrite dans
+# `tests/conftest.py` : **un test ne doit jamais dependre de l'environnement
+# de celui qui l'execute.**
+_SEUIL = Settings(_env_file=None).retrieval_min_score  # type: ignore[call-arg]
 
 # Les questions anglaises sont voulues : le modele est multilingue, et un
 # utilisateur anglophone doit etre servi par le meme corpus francais.
@@ -209,7 +226,7 @@ def meilleurs_scores(corpus_indexe: str) -> dict[str, float]:
 
 def _rapport(titre: str, fautives: dict[str, float], scores: dict[str, float]) -> str:
     """Message d'echec qui contient de quoi recalibrer, sans relancer quoi que ce soit."""
-    seuil = settings.retrieval_min_score
+    seuil = _SEUIL
     pire_couverte = min(scores[q] for q in _CALIBRAGE_COUVERTES)
     meilleure_hors_sujet = max(scores[q] for q in _CALIBRAGE_HORS_SUJET)
     lignes = [
@@ -236,7 +253,7 @@ def test_les_questions_couvertes_par_le_corpus_atteignent_le_seuil(
     refusees = {
         question: meilleurs_scores[question]
         for question in _COUVERTES
-        if meilleurs_scores[question] < settings.retrieval_min_score
+        if meilleurs_scores[question] < _SEUIL
     }
 
     assert not refusees, _rapport("Questions couvertes refusees", refusees, meilleurs_scores)
@@ -249,7 +266,7 @@ def test_les_questions_hors_sujet_restent_sous_le_seuil(
     admises = {
         question: meilleurs_scores[question]
         for question in _HORS_SUJET
-        if meilleurs_scores[question] >= settings.retrieval_min_score
+        if meilleurs_scores[question] >= _SEUIL
     }
 
     assert not admises, _rapport("Questions hors sujet admises", admises, meilleurs_scores)
@@ -268,7 +285,7 @@ def test_le_service_ne_renvoie_rien_hors_sujet_et_des_extraits_sinon(corpus_inde
                 _embedder(),
                 store,
                 settings.retrieval_top_k,
-                min_score=settings.retrieval_min_score,
+                min_score=_SEUIL,
             )
             hors_sujet = await service.retrieve(
                 "Quelle est la recette traditionnelle du cassoulet ?"
@@ -280,4 +297,4 @@ def test_le_service_ne_renvoie_rien_hors_sujet_et_des_extraits_sinon(corpus_inde
 
     assert nb_hors_sujet == 0
     assert scores_couverte
-    assert all(score >= settings.retrieval_min_score for score in scores_couverte)
+    assert all(score >= _SEUIL for score in scores_couverte)
