@@ -1,5 +1,42 @@
 # Changelog
 
+## [Non publie] - M5, ticket 40 : harnais de mutation
+
+### Ajoute
+
+- **`tests/mutation/`** : un harnais qui neutralise chaque barriere de securite
+  a tour de role et verifie qu'au moins un test s'en apercoit. Huit barrieres
+  declarees, un sous-processus pytest par barriere, un rapport qui nomme la
+  survivante et ce qu'elle empechait. **Bloquant en CI** (~45 s).
+- **ADR-0016** : pourquoi une table de huit mutations choisies plutot qu'un
+  outil generique, pourquoi le seuil est a un test et non a un pourcentage, et
+  pourquoi un sous-processus est necessaire.
+- Nouveau marqueur `mutation`, exclu de la suite rapide comme `integration`.
+- Entree dans la Definition of Done : une barriere ajoutee sans sa ligne dans
+  la table n'est pas verifiee, et rien ne le signale.
+
+### Corrige
+
+- **Deux tests SEC-12 passaient a vide.** `test_un_en_tete_hostile_...` et
+  `test_un_en_tete_demesure_...` inspectaient le journal apres une requete
+  `/query` reussie — qui n'emet aucune ligne applicative. Mesure : avec la
+  validation de `X-Request-ID` neutralisee, l'en-tete hostile est accepte et
+  renvoye tel quel, et le journal reste identique a l'octet pres. Les deux
+  declenchent desormais un chemin qui journalise, et une assertion partagee
+  refuse le silence.
+- **ADR-0014 et SECURITY.md affirmaient « neuf tests »** sur la foi de la
+  campagne manuelle du ticket 23, jamais commitee. Non reproductible : la
+  campagne automatisee en mesure deux, apres correction des tests a vide. Les
+  deux documents portent la correction datee.
+
+### Note
+
+C'est la deuxieme fois que le motif « test qui passe a vide » apparait dans ce
+fichier — un test voisin l'avait deja rencontre, et son docstring le decrit.
+D'ou le harnais : la vigilance ne suffit pas, il faut une machine qui pose la
+question a chaque CI.
+
+
 ## [Non publie] - M4, ticket 24 : tracage vers une instance Langfuse auto-hebergee
 ### Ajoute
 - **Module `observability/tracing.py`** : une seule fonction, `traced(...)`, que

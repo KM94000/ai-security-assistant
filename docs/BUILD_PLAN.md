@@ -138,6 +138,7 @@ la plateforme elle-même.
 
 | # | Ticket | Critère d'acceptation | Test |
 |---|---|---|---|
+| 40 ✅ | **Harnais de mutation** — ADR-0016 | chaque barrière, neutralisée, fait rougir ≥ 1 test ; bloquant en CI | tous |
 | 26 | Validation stricte des entrées + limites | entrées malveillantes rejetées | SEC-02, SEC-11 |
 | 27 | Défense injection directe | prompt d'injection connu neutralisé | SEC-01 |
 | 28 | Défense injection **indirecte** (sanitation du contexte récupéré) | doc empoisonné n'altère pas le comportement | SEC-01, SEC-04 |
@@ -146,6 +147,18 @@ la plateforme elle-même.
 | 31 | Scans sécu en CI (bandit, pip-audit, gitleaks) + Dependabot | CI échoue sur vulné/secret/dépendance risquée | SEC-15 |
 | 32 | Threat model STRIDE documenté | les 6 catégories couvertes (voir SECURITY.md) | — |
 | 33 | Writeup d'attaques + mitigations | document publiable (avant/après) | tous |
+
+> **Le ticket 40 ouvre le jalon, et c'est délibéré.** M5 ajoute huit défenses.
+> Sans harnais, la qualité des tests de chacune serait inconnue — et on sait
+> que le risque est réel : la validation d'identifiant CVE ne tuait que 2 tests
+> sur 12 avant d'être renforcée. Le construire **avant** fait naître chaque
+> défense avec son test vérifié, au lieu d'en rattraper huit après coup. Même
+> raisonnement que pour le ticket 26, inséré hors plan parce que M5 en dépendait.
+>
+> ⚠️ **Collision de numéro à lever.** Le `26` ci-dessus (validation stricte,
+> à faire) porte le même numéro que le fournisseur hébergé livré en M4. Le
+> second l'a pris par erreur. Renuméroter la ligne de M5 est une décision à
+> prendre ; en attendant, elle est signalée plutôt que silencieuse.
 
 **Sécurité intégrée M5 :** c'est LE milestone sécurité. Toutes les défenses des
 milestones précédents sont vérifiées par la matrice complète de

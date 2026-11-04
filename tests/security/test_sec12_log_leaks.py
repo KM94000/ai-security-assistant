@@ -94,6 +94,46 @@ def _client(services: Services) -> TestClient:
     return TestClient(app)
 
 
+def _services_qui_journalisent() -> Services:
+    """Services dont une requete produit au moins une ligne de journal a nous.
+
+    **Pourquoi ce detour.** Une requete `/query` qui reussit n'ecrit aucune
+    ligne applicative : seules `asyncio` et `httpx` parlent, et leurs lignes ne
+    portent pas d'identifiant. Un test qui inspecte le journal apres une
+    requete reussie inspecte donc le journal de quelqu'un d'autre, et passerait
+    quoi qu'il arrive.
+
+    On declenche ici le guardrail de sortie — le modele rend une forme de cle —
+    parce que c'est un chemin qui **emet** un avertissement, sous l'identifiant
+    de la requete. C'est le meme remede que pour
+    `test_chaque_ligne_dune_requete_porte_le_meme_identifiant`, dont la
+    premiere version etait tombee dans ce piege.
+    """
+    faux_secret = "sk-" + "a1b2c3d4" * 4  # forme de cle, construite ici
+    return Services(
+        retrieval=make_retrieval(FakeVectorStore([extrait("contenu")])),
+        generation=make_generation(FakeLLM(f"La cle est {faux_secret}")),
+        agent=cast(Any, None),
+        store=cast(Any, None),
+        llm=cast(Any, None),
+        cve=cast(Any, None),
+    )
+
+
+def _lignes_sous_identifiant(journal: io.StringIO) -> list[dict[str, Any]]:
+    """Les lignes du journal qui portent un `request_id`, et au moins une.
+
+    L'assertion est ici plutot que dans chaque test : une requete silencieuse
+    rendrait vraie n'importe quelle affirmation sur le contenu du journal.
+    """
+    lignes = [json.loads(ligne) for ligne in journal.getvalue().splitlines() if ligne.strip()]
+    sous_identifiant = [ligne for ligne in lignes if "request_id" in ligne]
+    assert (
+        sous_identifiant
+    ), "aucune ligne journalisee sous identifiant : le test ne prouverait rien"
+    return lignes
+
+
 # --- 1. Ce que le produit ecrit ---------------------------------------------
 
 
@@ -191,19 +231,22 @@ def test_un_en_tete_hostile_ne_fabrique_pas_de_fausse_ligne(journal: io.StringIO
     """
     charge = 'x\n{"event":"connexion reussie","level":"info"}'
 
-    _client(_services()).post("/query", json={"question": "question"}, headers={EN_TETE: charge})
+    _client(_services_qui_journalisent()).post(
+        "/query", json={"question": "question"}, headers={EN_TETE: charge}
+    )
 
-    lignes = [json.loads(ligne) for ligne in journal.getvalue().splitlines() if ligne.strip()]
+    lignes = _lignes_sous_identifiant(journal)
     assert all(ligne.get("event") != "connexion reussie" for ligne in lignes)
     assert "connexion reussie" not in journal.getvalue()
 
 
 def test_un_en_tete_demesure_ne_gonfle_pas_chaque_ligne(journal: io.StringIO) -> None:
     """Un identifiant de 10 ko recopie dans chaque ligne d'une requete est un DoS lent."""
-    _client(_services()).post(
+    _client(_services_qui_journalisent()).post(
         "/query", json={"question": "question"}, headers={EN_TETE: "A" * 10_000}
     )
 
+    _lignes_sous_identifiant(journal)
     assert "A" * 100 not in journal.getvalue()
 
 

@@ -82,7 +82,16 @@ standard.
   immédiat et vérifié par test : un `logging.warning` inchangé ressort en JSON,
   horodaté, avec le module d'origine et l'identifiant de la requête.
 - (+) Le volet **logs** de SEC-12 est fermé et testé, y compris l'injection de
-  logs. Vérifié par mutation : désactiver la validation fait rougir neuf tests.
+  logs. Vérifié par mutation : désactiver la validation fait rougir deux tests.
+
+> **Correction du 2026-11-04 (ADR-0016).** Cette ligne affirmait « neuf
+> tests », sur la foi d'une campagne manuelle jamais commitée. Le harnais
+> automatisé ne le reproduit pas : les deux tests d'en-tête hostile passaient
+> **à vide**, parce qu'une requête `/query` réussie n'émet aucune ligne
+> applicative à inspecter. Ils ont été corrigés — ils déclenchent désormais un
+> chemin qui journalise, et refusent le silence — et la barrière est
+> réellement couverte. Le chiffre ci-dessus est celui que la campagne
+> automatisée mesure.
 - (+) Le client reçoit l'identifiant en en-tête de réponse, et peut donc le
   citer en signalant une panne.
 - (−) **SEC-12 n'est fermé qu'à moitié.** Sa formulation dit « logs *et* traces »
