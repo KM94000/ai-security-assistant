@@ -87,7 +87,7 @@ testpaths = ["tests"]
 # ou exigent un service (Qdrant, Ollama). La suite par defaut doit rester
 # rapide et executable hors ligne, sinon on cesse de la lancer.
 # Les lancer explicitement avec : pytest -m integration
-addopts = "-m 'not integration'"
+addopts = "-m 'not integration and not mutation'"
 markers = [
     "integration: necessite un service externe ou un modele telecharge",
     # Marqueur distinct parce que la CI peut demarrer un conteneur Qdrant et
@@ -99,6 +99,10 @@ markers = [
     # parce que le NIST est lent n'apprend rien sur notre code, et une CI qui
     # rougit sans raison finit par ne plus etre lue.
     "network: exige un acces sortant vers un service tiers ; non executable en CI",
+    # Le harnais relance pytest une fois par barriere, dans un sous-processus.
+    # Hors de la suite rapide : il la contiendrait, et la durerait huit fois.
+    # Lance explicitement en CI : pytest -m mutation
+    "mutation: relance la suite avec une barriere de securite neutralisee",
 ]
 
 [tool.bandit]

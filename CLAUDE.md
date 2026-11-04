@@ -152,6 +152,9 @@ seuil de pertinence sur 47 questions (ADR-0010).
 - [ ] Tests unitaires du comportement (cas nominal + cas d'erreur).
 - [ ] Si le ticket touche une surface d'attaque : test(s) sécu associés (voir
       `docs/SECURITY.md`, colonne "Test ID").
+- [ ] Si le ticket **ajoute une barrière de sécurité** : sa ligne dans
+      `tests/mutation/barrieres.py`. Une barrière absente de la table n'est
+      pas vérifiée, et rien ne le signale (ADR-0016).
 - [ ] `mypy src` sans erreur.
 - [ ] Doc à jour (docstring, et README/ADR si pertinent).
 - [ ] CI verte sur la PR.
@@ -172,6 +175,10 @@ pre-commit install
 
 # Qualité (identique à la CI)
 ruff check . && black --check . && mypy src && pytest
+
+# Harnais de mutation : chaque barriere de securite est-elle testee ? (ADR-0016)
+# Neutralise une barriere a la fois et verifie qu'un test s'en apercoit. ~45 s.
+pytest -m mutation
 
 # Scans sécurité (identiques à la CI)
 pip-audit --skip-editable && bandit -r src -c pyproject.toml

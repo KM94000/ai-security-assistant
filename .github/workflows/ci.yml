@@ -27,6 +27,12 @@ jobs:
         run: mypy src
       - name: Tests (pytest)
         run: pytest
+      # Neutralise chaque barriere de securite a tour de role et verifie qu'un
+      # test s'en apercoit. Deterministe et sans reseau, donc bloquant : une
+      # barriere que plus rien ne teste doit faire rougir la CI, pas attendre
+      # qu'on y pense. Compte ~45 s — huit relances de pytest en sous-processus.
+      - name: Harnais de mutation (les tests peuvent-ils echouer ?)
+        run: pytest -m mutation
 
   # Garde-fou DevSecOps : un code vulnerable ou fuyant un secret
   # ne peut pas atteindre main. Reference : docs/SECURITY.md, SEC-15.
