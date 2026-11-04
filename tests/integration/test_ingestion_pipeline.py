@@ -68,10 +68,17 @@ async def test_le_corpus_de_reference_sindexe_et_se_retrouve(collection_jetable:
 
         report = await pipeline.ingest_directory(_CORPUS)
 
-        # Les trois referentiels doivent tous passer. La note de provenance vit
-        # dans data/ et non dans data/corpus/, precisement pour ne pas etre
-        # indexee comme du contenu interrogeable.
-        assert report.documents_ingested == 3
+        # **Tous** les referentiels doivent passer, et aucun n'est ecarte. Le
+        # nombre est lu dans le repertoire plutot qu'ecrit en dur : la valeur
+        # 3 codee ici a casse ce test au ticket 41, quand le corpus est passe
+        # a six documents. Ce qu'on veut figer n'est pas un compte, c'est la
+        # propriete « rien de ce qui est fourni n'est silencieusement perdu ».
+        #
+        # La note de provenance vit dans data/ et non dans data/corpus/,
+        # precisement pour ne pas etre indexee comme du contenu interrogeable.
+        attendus = len(list(_CORPUS.glob("*.md")))
+        assert attendus >= 3, "corpus de reference introuvable ou vide"
+        assert report.documents_ingested == attendus
         assert report.skipped == ()
         assert report.chunks_indexed > 10
 
@@ -81,12 +88,20 @@ async def test_le_corpus_de_reference_sindexe_et_se_retrouve(collection_jetable:
         resultats = await store.search(question[0], k=3)
 
     assert len(resultats) == 3
-    # La question porte sur l'injection indirecte, que traitent OWASP (LLM01) et
-    # MITRE ATLAS (« Techniques particulierement pertinentes pour un RAG »). Le
-    # cadre du NIST, qui n'en parle pas, ne doit pas ressortir en tete. Exiger
-    # OWASP devant ATLAS figerait un ordre entre deux passages pertinents : c'est
-    # ce qu'a revele le changement de modele (ADR-0010), sans que la recherche
-    # soit moins bonne.
-    assert resultats[0].source in {"owasp-llm-top10.md", "mitre-atlas.md"}
+    # La question porte sur l'injection indirecte. Trois documents la traitent :
+    # OWASP (LLM01), MITRE ATLAS (« Techniques particulierement pertinentes pour
+    # un RAG ») et le guide de durcissement, dont une section s'intitule
+    # « Structurer le prompt pour resister a l'injection indirecte ». Les trois
+    # sont des tetes de liste acceptables ; le cadre du NIST et ATT&CK, qui n'en
+    # parlent pas, ne doivent pas ressortir en tete.
+    #
+    # Figer un ordre entre des passages tous pertinents serait figer du bruit :
+    # le changement de modele (ADR-0010) l'avait deja montre, et le decoupage
+    # par sections (ticket 41) l'a reconfirme en portant le guide en tete.
+    assert resultats[0].source in {
+        "owasp-llm-top10.md",
+        "mitre-atlas.md",
+        "securite-rag-et-agents.md",
+    }
     assert "owasp-llm-top10.md" in {resultat.source for resultat in resultats}
     assert all(resultat.text.strip() for resultat in resultats)

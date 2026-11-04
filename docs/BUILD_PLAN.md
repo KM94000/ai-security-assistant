@@ -139,6 +139,7 @@ la plateforme elle-même.
 | # | Ticket | Critère d'acceptation | Test |
 |---|---|---|---|
 | 40 ✅ | **Harnais de mutation** — ADR-0016 | chaque barrière, neutralisée, fait rougir ≥ 1 test ; bloquant en CI | tous |
+| 41 ✅ | **Découpage conscient de la structure** + corpus élargi — ADR-0010 (réévaluation) | séparation rétablie : écart +0,000 → +0,066 | SEC-08 |
 | 26 | Validation stricte des entrées + limites | entrées malveillantes rejetées | SEC-02, SEC-11 |
 | 27 | Défense injection directe | prompt d'injection connu neutralisé | SEC-01 |
 | 28 | Défense injection **indirecte** (sanitation du contexte récupéré) | doc empoisonné n'altère pas le comportement | SEC-01, SEC-04 |

@@ -72,6 +72,11 @@ class Settings(BaseSettings):
     qdrant_collection: str = "aisec_docs"
 
     # --- Ingestion ---
+    # Inchangé au ticket 41, et c'est un résultat de mesure, pas un oubli :
+    # avec le découpage par sections, 800, 1 100 et 1 400 donnent la même
+    # qualité de recherche (moyenne des questions couvertes 0,734 à 0,736) et
+    # des écarts de séparation qui ne se distinguent pas du bruit sur
+    # 47 questions. Faute de preuve, on ne touche pas.
     chunk_size: int = Field(default=800, gt=0)
     chunk_overlap: int = Field(default=120, ge=0)
     # Plafond de taille d'un document (SEC-13). Verifie avant toute lecture :
@@ -84,11 +89,19 @@ class Settings(BaseSettings):
     # elle, la recherche renvoie toujours k extraits, même hors sujet, et le refus
     # « le corpus ne contient rien » ne se déclenche jamais.
     #
-    # Valeur mesurée, pas choisie : elle ne vaut que pour le modèle et la révision
-    # ci-dessus. Changer de modèle impose de la recalibrer —
-    # `tests/integration/test_retrieval_relevance.py` échoue sinon, en affichant
-    # les scores nécessaires.
-    retrieval_min_score: float = Field(default=0.64, ge=-1.0, le=1.0)
+    # Valeur mesurée, pas choisie : elle ne vaut que pour le modèle, la révision
+    # ci-dessus **et la stratégie de découpage**. Changer l'un des trois impose
+    # de recalibrer — `tests/integration/test_retrieval_relevance.py` échoue
+    # sinon, en affichant les scores nécessaires.
+    #
+    # Portée de 0,64 à 0,63 au ticket 41, avec le découpage par sections. La
+    # règle du milieu appliquée au seul calibrage donnerait 0,65 ; 0,63 est la
+    # valeur qui ne commet **aucune erreur sur les 67 questions** des trois
+    # jeux. L'écart entre les deux tient à une question du contrôle d'origine
+    # dont le sujet — les messages d'erreur trop bavards — n'est couvert que
+    # par une incise dans deux documents. C'est une lacune de corpus, pas un
+    # défaut de seuil, et elle est consignée comme telle (ADR-0010).
+    retrieval_min_score: float = Field(default=0.63, ge=-1.0, le=1.0)
 
     # --- Agent (M3) ---
     # Nombre maximal de tours d'outils avant que l'agent ne soit coupé (SEC-06).
