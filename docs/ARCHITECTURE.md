@@ -53,12 +53,15 @@ Entre l'action 1 et le retrieval s'intercale une **décision** : l'agent
 (LangGraph) choisit quels outils appeler.
 
 ```
-API → Agent ─┬─▶ outil RAG (le flux ci-dessus)
-             ├─▶ outil lookup CVE      (lecture seule)
-             └─▶ outil mapping ATT&CK  (lecture seule)
+API → Agent ─┬─▶ outil RAG (le flux ci-dessus)  (lecture seule)
+             └─▶ outil lookup CVE               (lecture seule)
              ▼
         synthèse → guardrails → réponse
 ```
+
+> **Deux outils, pas trois.** Un outil de mapping ATT&CK a longtemps figuré
+> ici ; il n'a jamais été écrit. Il reste une piste, pas un composant — et ce
+> document ne décrit que ce qui existe.
 
 🔐 Chaque outil valide ses arguments **en dur** (SEC-05) et respecte le moindre
 privilège (SEC-06). **Lecture seule** : aucun effet de bord destructif.
@@ -72,7 +75,7 @@ Chaque composant sert un objectif produit explicite.
 | Objectif produit | Composant(s) |
 |---|---|
 | Répondre sourcé | Retrieval + Generation |
-| Ne pas halluciner | Generation (prompt contraint) + Éval (mesure) |
+| Ne pas halluciner | Generation (prompt contraint) + seuil de pertinence, qui permet le refus · *mesure RAGAS : M6, pas encore en place* |
 | Agir / croiser (lecture seule) | Agent + outils |
 | Être sécurisé | Security (transverse) |
 | Vrai service | API |
@@ -80,23 +83,42 @@ Chaque composant sert un objectif produit explicite.
 
 ```
                       ┌─────────────┐
-     Utilisateur ────▶│    API      │  porte mince : valide, authz, trace, délègue
+     Utilisateur ────▶│    API      │  porte mince : valide, trace, délègue
                       └──────┬──────┘
-              ┌──────────────┼──────────────┐
-              ▼                             ▼
-        Service RAG (/query)         Service Agent (/agent)
-              │                             │ décide des outils
-        ┌─────┼─────┐               ┌───────┼────────┐
-        ▼     ▼     ▼               ▼       ▼        ▼
-   Retrieval Génér. Security   outil RAG  CVE   ATT&CK (lecture seule)
-        │     │
-   via interfaces
-        ▼     ▼
-   Embedder  LLMProvider          Observability ◀── enveloppe TOUT (transverse)
-        │    (Ollama→OpenAI)
-        ▼
-   VectorStore ──▶ Qdrant
+                 /query ─────┴───── /agent    ◀── aiguillage : l'un OU l'autre
+                     │                │
+                     ▼                ▼
+             Service RAG        Service Agent
+                     │          décide des outils
+                     │                │
+                     │          ┌─────┴─────┐
+                     │          ▼           ▼
+                     │     outil RAG    outil CVE ──▶ NVD (HTTP, lecture seule)
+                     │          │
+                     └────┬─────┘
+                          ▼
+        ┌─────────────────┴─────────────────┐
+        ▼                                   ▼
+   Retrieval                           LLMProvider      ◀── INSTANCES PARTAGÉES
+        ├──▶ Embedder                 (Ollama | OpenAI)     une seule de chaque
+        └──▶ VectorStore ──▶ Qdrant
+
+   Security ──────── transverse : plafonds, assainissement, guardrail de sortie
+   Observability ─── transverse : journaux + request_id, traces
 ```
+
+**Trois choses que ce schéma dit, et que l'ancien disait mal :**
+
+- La fourche sous l'API est un **OU**, pas un éventail. Une requête emprunte une
+  seule branche, choisie par le chemin d'URL — pas par un arbitrage de l'API.
+- C'est un **graphe, pas un arbre**. `LLMProvider` et `Retrieval` sont chacun
+  une **instance unique**, partagée par les deux chemins : la génération et
+  l'agent parlent au même fournisseur, et l'outil RAG de l'agent interroge le
+  même `Retrieval` que `/query`. Un arbre obligeait à les placer arbitrairement
+  sous une branche, ce qui laissait croire que l'agent n'appelle pas le modèle —
+  alors qu'il l'appelle **plus** que `/query` (1 à 4 fois contre 0 ou 1).
+- L'API ne fait **pas d'autorisation** : l'authentification est SEC-14, prévue
+  en M5. Elle ne figure ici que le jour où elle existera.
 
 ### Règles de frontière (responsabilité unique)
 - `Retrieval` cherche, **n'appelle pas** le LLM.

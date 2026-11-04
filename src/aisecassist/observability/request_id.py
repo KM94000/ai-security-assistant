@@ -52,9 +52,20 @@ class RequestIdMiddleware:
     """Attache un identifiant a chaque requete, et le rend au client.
 
     Intergiciel ASGI ecrit a la main plutot que `BaseHTTPMiddleware` de
-    Starlette : ce dernier enveloppe la reponse dans une tache separee, ce qui
-    casse la propagation des variables de contexte vers le code appele — donc
-    precisement ce qu'on cherche a faire ici.
+    Starlette. Ce dernier execute la suite de l'application dans une tache
+    separee, et une tache part avec une **copie** du contexte, prise a sa
+    creation. Mesure sur Starlette 1.6.0 : ce qui est lie ici **descend** bien
+    jusqu'a la route, mais rien de ce qui est ecrit en aval ne remonte.
+
+    La raison qui compte n'est donc pas que la descente serait cassee — elle ne
+    l'est pas aujourd'hui — mais que **cette propriete a varie selon les
+    versions**, et que la correlation des journaux ne doit pas reposer sur un
+    detail d'implementation d'une dependance. Un `await` dans la meme tache ne
+    depend d'aucune version.
+
+    Deux benefices accessoires : l'en-tete de reponse s'ajoute naturellement en
+    interceptant `http.response.start`, et on evite le groupe de taches et les
+    deux flux memoire que `BaseHTTPMiddleware` ouvre a chaque requete.
     """
 
     def __init__(self, app: ASGIApp) -> None:
