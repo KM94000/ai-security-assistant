@@ -42,6 +42,7 @@ from langgraph.graph import END, StateGraph
 
 from aisecassist.agents.tools import Tool, ToolArgumentError, ToolResult
 from aisecassist.llm.base import ChatMessage, ToolCall, ToolCallingProvider, ToolSpec
+from aisecassist.observability.tracing import traced
 from aisecassist.security.limits import MAX_QUESTION_LENGTH, plafonner
 from aisecassist.security.output_guardrail import redact
 from aisecassist.security.prompt_sanitation import neutralize_markers
@@ -291,11 +292,18 @@ class AgentService:
         # Le tracage complet des valeurs viendra avec Langfuse en M4, dans un
         # systeme prevu pour, pas dans les logs applicatifs (SEC-12).
         logger.info("Appel d'outil %s, arguments : %s.", nom, sorted(appel.arguments))
-        try:
-            return await outil.run(appel.arguments)
-        except ToolArgumentError as exc:
-            logger.warning("Arguments refuses pour %s : %s", nom, exc)
-            return ToolResult(observation=str(exc))
+        # La trace, elle, porte les valeurs : c'est la difference entre les deux
+        # (SEC-12). Un journal est conserve largement et lu par beaucoup ; une
+        # trace vit dans un systeme dedie, auto-heberge, prevu pour ce contenu.
+        with traced(f"outil:{nom}", **dict(appel.arguments)) as span:
+            try:
+                resultat = await outil.run(appel.arguments)
+            except ToolArgumentError as exc:
+                logger.warning("Arguments refuses pour %s : %s", nom, exc)
+                span.sortie(refus=str(exc))
+                return ToolResult(observation=str(exc))
+            span.sortie(observation=resultat.observation, sources=list(resultat.sources))
+            return resultat
 
     # --- Construction du graphe ---------------------------------------------
 

@@ -25,6 +25,9 @@ dependencies = [
     # module `logging` standard : les appels existants traversent la meme chaine
     # de traitement sans etre reecrits, et les bibliotheques tierces aussi.
     "structlog>=24.1",
+    # Tracage (ticket 24, ADR-0015). Emet en OpenTelemetry : les traces restent
+    # portables vers n'importe quel collecteur si Langfuse disparaissait.
+    "langfuse>=4.0",
     # Embeddings locaux (ADR-0006). Tire torch : environ 200 Mo de wheel.
     # Plancher a 5.7 : version ou l'on s'appuie sur get_embedding_dimension
     # plutot que sur son alias deprecie. Verifie en 5.7 et en 6.0.

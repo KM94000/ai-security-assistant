@@ -20,6 +20,7 @@ from aisecassist.api.schemas import QueryRequest, QueryResponse, SourceRef
 from aisecassist.api.sse import sse_event
 from aisecassist.embeddings.base import EmbedderError
 from aisecassist.llm.base import LLMError
+from aisecassist.observability.tracing import traced
 from aisecassist.vectorstore.base import SearchResult, VectorStoreError
 
 logger = logging.getLogger(__name__)
@@ -79,8 +80,10 @@ async def query(
     score : c'est ce qui permet a l'utilisateur de verifier la reponse plutot
     que de la croire.
     """
-    results = await services.retrieval.retrieve(payload.question)
-    generated = await services.generation.answer(payload.question, results)
+    with traced("query", question=payload.question) as span:
+        results = await services.retrieval.retrieve(payload.question)
+        generated = await services.generation.answer(payload.question, results)
+        span.sortie(answer=generated.answer, sources=[r.source for r in results])
 
     return QueryResponse(
         answer=generated.answer,

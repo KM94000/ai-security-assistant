@@ -1,5 +1,47 @@
 # Changelog
 
+## [Non publie] - M4, ticket 24 : tracage vers une instance Langfuse auto-hebergee
+### Ajoute
+- **Module `observability/tracing.py`** : une seule fonction, `traced(...)`, que
+  le metier appelle. Aucun autre fichier ne connait Langfuse.
+- **Pile d'observabilite dans docker compose**, derriere un profil : six
+  conteneurs qui ne demarrent que sur demande explicite.
+
+      docker compose --env-file docker/.env -f docker/docker-compose.yml         up -d langfuse-web langfuse-worker
+
+- `LANGFUSE_ENABLED` (faux par defaut), `LANGFUSE_HOST`, `LANGFUSE_PUBLIC_KEY`,
+  `LANGFUSE_SECRET_KEY` en configuration, et `docker/.env.example` pour les trois
+  secrets d'infrastructure.
+- ADR-0015. Et l'ADR-0011 porte desormais la **reevaluation de LangGraph** :
+  douze paquets pour un import, deux tickets consecutifs qui n'en ont tire aucun
+  benefice, decision de le garder par arbitrage de calendrier, a reprendre en M6
+  avec un critere fixe d'avance.
+
+### Ce qui est trace
+- Une requete `/query` ou `/agent` apparait avec ses etapes. Mesure sur une vraie
+  requete : `agent` a 3,2 s, dont `outil:consulter_cve` a 0,66 s.
+- La recherche porte les scores des extraits retenus et le nombre d'ecartes :
+  c'est par eux qu'on explique un refus ou un extrait hors sujet.
+
+### Securite
+- **SEC-12 couvre maintenant ses deux destinations.** Les traces contiennent
+  deliberement la question et les extraits — sans eux elles ne serviraient a
+  rien — mais jamais de secret, redige par le meme guardrail que les reponses.
+- **L'instance est auto-hebergee.** C'est le point central : envoyer ce contenu
+  a un tiers contredirait l'ADR-0003, qui a retenu un modele local precisement
+  pour qu'il ne sorte pas. Cout assume : six conteneurs.
+- Deux tests figent la frontiere entre journaux et traces — une question
+  sensible absente des premiers, presente dans les secondes — pour qu'elle reste
+  un choix documente et non une derive.
+- **Un traceur en panne ne fait pas tomber le produit** : configuration absente,
+  hote injoignable, cles refusees, chaque cas est journalise puis ignore.
+
+### Teste
+- 14 tests unitaires sur la couche de tracage, dont trois pannes simulees.
+- 2 tests de securite supplementaires (SEC-12, volet traces).
+- Les 350 tests passent **sans qu'une seule signature n'ait change** : c'est la
+  verification de l'argument qui avait servi a arbitrer le perimetre de M4.
+
 ## [Non publie] - M4, ticket 23 : logs structures et identifiant de requete
 ### Ajoute
 - **Module `observability/`** : configuration des logs structures et intergiciel

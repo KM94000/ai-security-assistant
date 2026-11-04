@@ -24,6 +24,7 @@ from fastapi import APIRouter, Depends
 
 from aisecassist.api.deps import Services, get_services
 from aisecassist.api.schemas import AgentResponse, QueryRequest
+from aisecassist.observability.tracing import traced
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +76,13 @@ async def agent(
     Le champ `iterations` rend ce cheminement visible : zero signifie que le
     modele a repondu de lui-meme, sans rien consulter.
     """
-    resultat = await services.agent.answer(payload.question)
+    with traced("agent", question=payload.question) as span:
+        resultat = await services.agent.answer(payload.question)
+        span.sortie(
+            answer=resultat.answer,
+            sources=list(resultat.sources),
+            iterations=resultat.iterations,
+        )
 
     return AgentResponse(
         answer=resultat.answer,

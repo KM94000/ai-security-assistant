@@ -36,9 +36,157 @@ services:
       retries: 5
       start_period: 10s
 
-  # --- Services des milestones suivants (feuille de route) ---
-  # langfuse:    # M4 — observabilite / tracing
-  #   image: langfuse/langfuse
+  # --- Observabilite (ticket 24, ADR-0015) ---
+  #
+  # Tous ces services portent le profil `observability` : ils ne demarrent
+  # QUE sur demande explicite.
+  #
+  #   docker compose --profile observability up -d
+  #
+  # Sans le profil, `up -d qdrant` se comporte exactement comme avant. Ce n'est
+  # pas un detail de confort : Langfuse exige cinq conteneurs d'infrastructure,
+  # et les imposer a quiconque veut simplement lancer les tests d'integration
+  # rendrait l'environnement de developpement plus lourd que le produit.
+  #
+  # Les mots de passe ci-dessous sont des valeurs de developpement local,
+  # volontairement banales et sans valeur. Les trois secrets qui en ont une —
+  # chiffrement, sel, session — sont lus dans l'environnement et n'ont pas de
+  # valeur par defaut : le service refuse de demarrer sans eux, plutot que de
+  # fonctionner avec une valeur d'exemple que personne n'aurait remplacee.
+
+  langfuse-web:
+    image: langfuse/langfuse:3
+    profiles: [observability]
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@langfuse-postgres:5432/postgres
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:?a generer, voir .env.example}
+      SALT: ${LANGFUSE_SALT:?a generer, voir .env.example}
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:?a generer, voir .env.example}
+      CLICKHOUSE_URL: http://langfuse-clickhouse:8123
+      CLICKHOUSE_MIGRATION_URL: clickhouse://langfuse-clickhouse:9000
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: clickhouse
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      REDIS_HOST: langfuse-redis
+      REDIS_PORT: "6379"
+      REDIS_AUTH: redis
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      # Le produit tourne en local : aucune raison d'envoyer des statistiques
+      # d'usage vers l'exterieur depuis un outil choisi pour que rien ne sorte.
+      TELEMETRY_ENABLED: "false"
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
+    depends_on:
+      langfuse-postgres:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+      langfuse-minio:
+        condition: service_healthy
+      langfuse-redis:
+        condition: service_started
+
+  langfuse-worker:
+    image: langfuse/langfuse-worker:3
+    profiles: [observability]
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@langfuse-postgres:5432/postgres
+      SALT: ${LANGFUSE_SALT:?a generer, voir .env.example}
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:?a generer, voir .env.example}
+      CLICKHOUSE_URL: http://langfuse-clickhouse:8123
+      CLICKHOUSE_MIGRATION_URL: clickhouse://langfuse-clickhouse:9000
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: clickhouse
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      REDIS_HOST: langfuse-redis
+      REDIS_PORT: "6379"
+      REDIS_AUTH: redis
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      TELEMETRY_ENABLED: "false"
+    depends_on:
+      langfuse-postgres:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+      langfuse-minio:
+        condition: service_healthy
+
+  langfuse-postgres:
+    image: postgres:16-alpine
+    profiles: [observability]
+    environment:
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - langfuse_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  langfuse-clickhouse:
+    image: clickhouse/clickhouse-server:24.3
+    profiles: [observability]
+    environment:
+      CLICKHOUSE_PASSWORD: clickhouse
+    volumes:
+      - langfuse_clickhouse_data:/var/lib/clickhouse
+      - langfuse_clickhouse_logs:/var/log/clickhouse-server
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "localhost:8123/ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 20s
+
+  # Stockage compatible S3, exige par Langfuse pour la file d'ingestion.
+  #
+  # Epingle par EMPREINTE et non par etiquette. `minio/minio` sur Docker Hub
+  # n'est plus accessible publiquement, et `quay.io/minio/minio` repond 401 :
+  # l'editeur a change sa distribution. L'image retenue est une reprise
+  # communautaire, dont les etiquettes n'offrent aucune garantie de stabilite —
+  # une empreinte, si. C'est le seul point du projet ou ce niveau d'epinglage
+  # est necessaire, et la raison est ecrite pour qu'on puisse en sortir le jour
+  # ou une image officielle redevient disponible.
+  langfuse-minio:
+    image: bitnamilegacy/minio@sha256:451fe6858cb770cc9d0e77ba811ce287420f781c7c1b806a386f6896471a349c
+    profiles: [observability]
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: miniosecret
+      # Le bucket doit exister avant le premier envoi : Langfuse ne le cree pas.
+      MINIO_DEFAULT_BUCKETS: langfuse
+    volumes:
+      - langfuse_minio:/bitnami/minio/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 15s
+
+  langfuse-redis:
+    image: redis:7-alpine
+    profiles: [observability]
+    command: --requirepass redis
 
 volumes:
   qdrant_storage:
+  langfuse_postgres:
+  langfuse_clickhouse_data:
+  langfuse_clickhouse_logs:
+  langfuse_minio:

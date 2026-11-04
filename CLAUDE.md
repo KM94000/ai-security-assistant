@@ -176,8 +176,12 @@ pip-audit --skip-editable && bandit -r src -c pyproject.toml
 # Lancer l'API
 uvicorn aisecassist.main:app --reload      # http://localhost:8000/docs
 
-# Services (Qdrant, plus tard Langfuse)
+# Services
 docker compose -f docker/docker-compose.yml up -d qdrant
+
+# Observabilite (6 conteneurs, ADR-0015) — seulement si besoin de tracage.
+# Prealable : cp docker/.env.example docker/.env, puis generer les 3 secrets.
+docker compose --env-file docker/.env -f docker/docker-compose.yml   up -d langfuse-web langfuse-worker
 ```
 
 ---
