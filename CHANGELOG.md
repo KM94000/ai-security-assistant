@@ -1,5 +1,53 @@
 # Changelog
 
+## [Non publie] - M5, ticket 41 : decoupage conscient de la structure
+
+### Ajoute
+
+- **Corpus triple** : 10 443 -> 30 396 caracteres, 3 -> 6 documents. Nouveaux :
+  OWASP Top 10 web 2021, MITRE ATT&CK (tactiques Enterprise), et un document de
+  pratiques de durcissement RAG et agents. Toujours en synthese redigee pour le
+  projet, jamais en copie des sources — aucune obligation de licence heritee.
+- **`chunk_document`** : une section Markdown de niveau 2 est une unite,
+  prefixee du titre du document, coupee sur des frontieres de phrase seulement
+  si elle deborde. `chunk_text` reste, comme repli pour les documents sans
+  structure. 11 tests.
+- **Jeu de controle etendu** : 10 questions couvertes et 10 hors-sujet, ecrites
+  avant toute mesure et mesurees une seule fois. Il couvre la securite web et
+  ATT&CK, absents du corpus quand le controle d'origine a ete ecrit.
+
+### Modifie
+
+- `RETRIEVAL_MIN_SCORE` : 0,64 -> **0,63**. Valeur qui ne commet aucune erreur
+  sur les 67 questions des trois jeux.
+
+### Corrige
+
+- **Le decoupage faisait le seuil.** Grossir le corpus a fait tomber l'ecart de
+  separation de +0,060 a +0,000 : plus aucun seuil ne separait le pertinent du
+  hors-sujet. La cause n'etait pas le corpus mais la fenetre glissante, qui
+  coupait au milieu des mots et produisait des fragments a cheval sur deux
+  sections — donc des moyennes semantiques, proches du centre de l'espace
+  vectoriel, donc proches de n'importe quel texte generique. La salutation
+  « Bonjour, comment vas-tu ? » atteignait 0,651 en s'accrochant a un extrait
+  sur l'elevation de privileges.
+
+  Apres correction : ecart de calibrage **+0,066**, superieur aux +0,060 du
+  corpus d'origine. Trois fois plus de contenu, et une meilleure separation.
+
+- **Validation dependante du contenu.** `chunk_document` ne verifiait ses
+  parametres qu'en atteignant son repli en fenetre : les memes valeurs etaient
+  acceptees ou refusees selon le document. Validation extraite et appelee
+  inconditionnellement par les deux decoupeurs.
+
+### Note
+
+Six strategies de decoupage ont ete mesurees sur les memes questions ; le
+tableau complet et le raisonnement sont dans la reevaluation de l'ADR-0010.
+Le *small-to-big* — indexer petit, rendre grand — obtient les meilleurs chiffres
+mais exige que le texte indexe differe du texte rendu : ticket distinct.
+
+
 ## [Non publie] - M5, ticket 40 : harnais de mutation
 
 ### Ajoute

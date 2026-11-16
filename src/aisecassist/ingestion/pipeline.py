@@ -15,7 +15,7 @@ from pathlib import Path
 from aisecassist.config import settings
 from aisecassist.embeddings.base import Embedder
 from aisecassist.embeddings.sentence_transformer import SentenceTransformerEmbedder
-from aisecassist.ingestion.chunker import chunk_text
+from aisecassist.ingestion.chunker import chunk_document
 from aisecassist.ingestion.cleaner import clean_text
 from aisecassist.ingestion.loader import IngestionError, iter_corpus, load_document
 from aisecassist.vectorstore.base import VectorStore
@@ -89,7 +89,7 @@ class IngestionPipeline:
             cleaned = clean_text(raw.text)
             invisibles += cleaned.removed_invisible
 
-            fragments = chunk_text(cleaned.text, self._chunk_size, self._chunk_overlap)
+            fragments = chunk_document(cleaned.text, self._chunk_size, self._chunk_overlap)
             if not fragments:
                 ecartes.append(
                     SkippedDocument(source=raw.source, reason="document vide apres assainissement")

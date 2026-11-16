@@ -123,3 +123,106 @@ sujet sur cinq.
 - Écart assumé au BUILD_PLAN, qui plaçait la comparaison de modèles en M6 : elle
   est avancée parce que l'agent de M3 dépend d'un retrieval capable de dire
   « rien ».
+
+---
+
+## Réévaluation du 2026-11-04 — le découpage faisait le seuil (ticket 41)
+
+**Déclencheur.** Le corpus est passé de 10 443 à 30 396 caractères pour qu'une
+démonstration ne bute plus sur la première question spontanée. Le calibrage
+s'est effondré : écart **+0,060 → +0,000**. Plus aucun seuil ne séparait.
+
+**Diagnostic.** Pas le corpus — le **découpage**. La fenêtre glissante coupait
+au milieu des mots et produisait des fragments à cheval sur deux sections, donc
+des moyennes sémantiques de deux sujets. Une moyenne se place près du centre de
+l'espace vectoriel, c'est-à-dire près de n'importe quel texte générique. La
+salutation « Bonjour, comment vas-tu ? » atteignait **0,651**, au-dessus de la
+plus faible question couverte — en s'accrochant à un extrait sur l'élévation de
+privilèges, sans le moindre rapport sémantique.
+
+C'est l'avertissement du docstring de `chunker.py`, écrit au ticket 10, qui se
+réalise : *« un mauvais découpage ne plante pas, il dégrade silencieusement la
+pertinence »*. Le défaut était invisible à 16 fragments ; il est devenu bloquant
+à 50.
+
+### Six stratégies mesurées, mêmes 47 questions
+
+| Stratégie | frags | moy. couverte | écart |
+|---|---|---|---|
+| fenêtre glissante 800/120 (en place) | 50 | 0,728 | **+0,000** |
+| phrases seules, sans sections | 49 | 0,734 | **−0,021** |
+| sections nues | 57 | **0,763** | −0,001 |
+| sections + titre du document | 57 | 0,736 | **+0,025** |
+| sections courtes + titre | 75 | 0,735 | +0,020 |
+| *small-to-big* (indexer petit, rendre grand) | 132 | **0,742** | **+0,029** |
+
+Deux effets distincts, et il faut les deux. **Découper par section** améliore la
+recherche (0,728 → 0,763) : un fragment est alors un sujet, pas une moyenne.
+**Préfixer du titre du document** crée la séparation (meilleure hors-sujet
+0,651 → 0,609) : chaque fragment commence par un texte fortement marqué, ce qui
+éloigne tout le corpus du français générique.
+
+« Phrases seules » le prouve a contrario : supprimer les coupes au milieu des
+mots **sans** respecter les sections dégrade l'écart. C'est la pureté
+thématique qui compte, pas la propreté typographique.
+
+### Décision
+
+`chunk_document` : une section de niveau 2 est une unité, préfixée du titre du
+document, coupée sur des frontières de phrase seulement si elle déborde.
+`chunk_text` reste, comme repli pour les documents sans structure.
+
+Mesuré sur l'implémentation réelle : écart de calibrage **+0,066**, soit
+davantage que les +0,060 du corpus d'origine — **trois fois plus de contenu, et
+une séparation meilleure qu'elle ne l'a jamais été**.
+
+Le *small-to-big* est écarté **de cette étape seulement** : il exige que le
+texte indexé diffère du texte rendu, donc un changement de payload et une
+déduplication des parents au retrieval. Il fait l'objet d'un ticket distinct.
+
+**Taille de fragment inchangée à 800.** Mesurée à 800, 1 100 et 1 400 : moyenne
+des questions couvertes de 0,734 à 0,736, écarts indiscernables du bruit sur
+47 questions. Faute de preuve, on ne touche pas.
+
+### Le seuil : 0,64 → 0,63, et pourquoi pas 0,65
+
+La règle du milieu appliquée au **calibrage seul** donne 0,65. Le jeu de
+contrôle d'origine montre qu'à 0,65 une question légitime est refusée : *« Pourquoi
+des messages d'erreur trop détaillés aident-ils un attaquant ? »*, à 0,635.
+
+**0,63 est la valeur qui ne commet aucune erreur sur les 67 questions** des
+trois jeux.
+
+L'écart entre 0,65 et 0,63 n'est pas un défaut de seuil mais une **lacune de
+corpus** : le sujet des messages d'erreur bavards n'est couvert que par une
+incise dans deux documents, jamais traité par une section. C'est consigné ici
+plutôt que corrigé — corriger le corpus en réponse à une question de contrôle
+reviendrait à enseigner au test.
+
+### Un jeu de contrôle étendu, et pourquoi
+
+Avoir consulté le contrôle d'origine pour constater ce conflit le rapproche d'un
+jeu de calibrage. La règle du module impose alors d'en écrire un nouveau :
+**10 questions couvertes et 10 hors-sujet, rédigées avant toute mesure et
+mesurées une seule fois.** Résultat : **zéro erreur à 0,62, 0,63, 0,64 et 0,65**.
+
+Deux précisions sur sa composition. Il couvre la sécurité web et MITRE ATT&CK,
+absents du corpus quand le contrôle d'origine a été écrit — celui-ci ne
+vérifiait donc plus la moitié de ce que le système prétend savoir. Et il
+**conserve une salutation** (« Salut, tu vas bien ? », mesurée à 0,603) :
+écarter le cas qui avait fait échouer la séparation, parce qu'il était
+difficile, aurait été déplacer le poteau de but.
+
+Aucune question n'a été retirée d'aucun jeu.
+
+### Conséquences
+
+- (+) Corpus trois fois plus grand, séparation meilleure qu'à l'origine.
+- (+) Les fragments ne commencent plus au milieu d'un mot : ce qui est cité à
+  l'utilisateur comme source est désormais lisible.
+- (−) La réserve de l'ADR tient toujours, et s'alourdit : **67 questions sur un
+  corpus, des écarts de l'ordre de 0,02 à 0,07.** Un indicateur, pas un banc
+  d'essai. Le signe est constant sur six stratégies et le mécanisme s'explique,
+  mais on ne survendra pas trois centièmes.
+- (−) Le découpage devient un **troisième** paramètre dont dépend le seuil, à
+  côté du modèle et de sa révision. Le test de calibrage le dit désormais.
